@@ -333,6 +333,9 @@ class ModernApp:
         # Check for updates in background
         threading.Thread(target=self.check_for_updates, daemon=True).start()
 
+        # Graceful shutdown hook
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+
     def setup_ui(self):
         # Sidebar
         self.sidebar = ctk.CTkFrame(self.root, width=220, corner_radius=0)
@@ -638,10 +641,27 @@ class ModernApp:
                             f"del \"%~f0\"\n")
                 
                 subprocess.Popen(bat_path, shell=True)
-                self.root.after(0, self.root.quit)
+                # Gracefully drop connection before swapping executables
+                self.root.after(0, self.on_closing)
             except Exception as e:
                 self.root.after(0, lambda: self.btn_update.configure(text=f"Update Failed: {e}"))
         threading.Thread(target=_dl, daemon=True).start()
+
+    def on_closing(self):
+        if self.is_running:
+            self.btn_toggle.configure(state="disabled")
+            self.status_indicator.configure(text="● DISCONNECTING...", text_color="#E0AF68")
+            self.root.update()
+            
+            self.bot.stop_event.set()
+            start_wait = time.time()
+            # Wait up to 2.5 seconds for the bot thread to send its message and close sock
+            while self.bot.sock is not None and (time.time() - start_wait) < 2.5:
+                self.root.update()
+                time.sleep(0.05)
+                
+        self.root.destroy()
+        os._exit(0)
 
 if __name__ == "__main__":
     root = ctk.CTk()
