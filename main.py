@@ -29,7 +29,7 @@ except ImportError:
 # Global Configuration & Paths
 # ──────────────────────────────────────────────────────────────────────────────
 
-VERSION = "1.0.6"
+VERSION = "1.0.7"
 GITHUB_REPO = "hannogeo/ai-twitch-bot"  # EDIT THIS to enable Auto-Updates
 
 if getattr(sys, 'frozen', False):
@@ -437,7 +437,16 @@ class ModernApp:
         self.e_token = create_entry(f, "OAuth Token (oauth:xxx)", self.bot.config.get("TOKEN", ""), show="*")
         self.e_chan = create_entry(f, "Channel", self.bot.config.get("CHANNEL", ""))
         
-        ctk.CTkButton(f, text="Save Credentials", font=ctk.CTkFont(weight="bold", size=14), height=45, corner_radius=8, command=self.save_bot_config).pack(fill="x", pady=30)
+        # Connection Message Toggles
+        self.sw_conn = ctk.CTkSwitch(f, text="Send Connect Message to Chat", font=ctk.CTkFont(size=14))
+        self.sw_conn.pack(anchor="w", pady=(15, 5))
+        if self.bot.config.get("CONNECT_MSG_ENABLED", True): self.sw_conn.select()
+        
+        self.sw_disc = ctk.CTkSwitch(f, text="Send Disconnect Message to Chat", font=ctk.CTkFont(size=14))
+        self.sw_disc.pack(anchor="w", pady=(5, 20))
+        if self.bot.config.get("DISCONNECT_MSG_ENABLED", True): self.sw_disc.select()
+        
+        ctk.CTkButton(f, text="Save Settings", font=ctk.CTkFont(weight="bold", size=14), height=45, corner_radius=8, command=self.save_bot_config).pack(fill="x", pady=20)
 
     def build_ai(self):
         ctk.CTkLabel(self.p_ai, text="AI BRAIN SETTINGS", font=ctk.CTkFont(size=28, weight="bold")).pack(anchor="w", padx=40, pady=(40, 5))
@@ -588,8 +597,11 @@ class ModernApp:
         data["NICK"] = self.e_nick.get().strip()
         data["TOKEN"] = self.e_token.get().strip()
         data["CHANNEL"] = self.e_chan.get().strip().replace("#", "").lower()
+        data["CONNECT_MSG_ENABLED"] = bool(self.sw_conn.get())
+        data["DISCONNECT_MSG_ENABLED"] = bool(self.sw_disc.get())
+        
         self.bot.save_config(data)
-        messagebox.showinfo("Success", "Bot configuration saved!")
+        messagebox.showinfo("Success", "Bot settings saved!")
 
     def save_ai_config(self):
         key = self.e_ai_key.get().strip()
