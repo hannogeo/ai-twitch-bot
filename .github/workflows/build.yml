@@ -23,19 +23,11 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install customtkinter groq duckduckgo-search requests
+        pip install nuitka zstandard customtkinter groq duckduckgo-search requests
         
-    - name: Build PyInstaller from Source (Antivirus Bypass)
+    - name: Build Executable pipeline (Nuitka C-Compiler)
       run: |
-        git clone https://github.com/pyinstaller/pyinstaller.git
-        cd pyinstaller/bootloader
-        python ./waf all --target-arch=64bit
-        cd ..
-        pip install .
-        
-    - name: Build Executable
-      run: |
-        pyinstaller --noconfirm --onefile --windowed --name "AIChatbot" --collect-all customtkinter main.py
+        python -m nuitka --standalone --onefile --windows-console-mode=disable --enable-plugin=tk-inter --include-package-data=customtkinter --output-dir=dist --output-filename=AIChatbot.exe main.py
         
     - name: Create Release
       id: create_release

@@ -32,9 +32,9 @@ except ImportError:
 VERSION = "1.0.3"
 GITHUB_REPO = "hannogeo/ai-twitch-bot"  # EDIT THIS to enable Auto-Updates
 
-if getattr(sys, 'frozen', False):
+if getattr(sys, 'frozen', False) or "__compiled__" in globals():
     # This ensures bot_config and ai_config save securely NEXT to the .exe 
-    # and survive all updates, completely avoiding PyInstaller's hidden Temp destruction
+    # and survive all updates, completely avoiding compiler temp destruction
     BASE_DIR = os.path.dirname(sys.executable)
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -627,8 +627,8 @@ class ModernApp:
                         f.write(chunk)
                 
                 bat_path = os.path.join(BASE_DIR, "update.bat")
-                current_exe = sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(__file__)
-                if not getattr(sys, 'frozen', False):
+                current_exe = sys.executable if (getattr(sys, 'frozen', False) or "__compiled__" in globals()) else os.path.abspath(__file__)
+                if not (getattr(sys, 'frozen', False) or "__compiled__" in globals()):
                     self.root.after(0, lambda: self.btn_update.configure(text="Update downloaded (Run script manually)"))
                     return
                 
