@@ -29,11 +29,11 @@ except ImportError:
 # Global Configuration & Paths
 # ──────────────────────────────────────────────────────────────────────────────
 
-VERSION = "1.0.5"
+VERSION = "1.0.6"
 GITHUB_REPO = "hannogeo/ai-twitch-bot"  # EDIT THIS to enable Auto-Updates
 
-if getattr(sys, 'frozen', False) or "__compiled__" in globals():
-    # This ensures bot_config and ai_config save securely NEXT to the .exe 
+if getattr(sys, 'frozen', False):
+    # This ensures bot_config and ai_config save securely NEXT to the App Folder 
     # and survive all updates, completely avoiding compiler temp destruction
     BASE_DIR = os.path.dirname(sys.executable)
 else:
@@ -617,39 +617,44 @@ class ModernApp:
         self.btn_update.pack(pady=20)
 
     def do_update(self, url):
-        self.btn_update.configure(state="disabled", text="Downloading... (Please wait)")
+        import zipfile
+        self.btn_update.configure(state="disabled", text="Downloading Update... (Please wait)")
         def _dl():
             try:
                 r = requests.get(url, stream=True)
-                new_exe = os.path.join(BASE_DIR, "AIChatbot_new.exe")
-                with open(new_exe, "wb") as f:
+                zip_path = os.path.join(BASE_DIR, "update.zip")
+                with open(zip_path, "wb") as f:
                     for chunk in r.iter_content(chunk_size=8192):
                         f.write(chunk)
                 
+                temp_update_dir = os.path.join(BASE_DIR, "update_temp")
+                if not os.path.exists(temp_update_dir): os.makedirs(temp_update_dir)
+                
+                with zipfile.ZipFile(zip_path, 'r') as zf:
+                    zf.extractall(temp_update_dir)
+                
                 bat_path = os.path.join(BASE_DIR, "update.bat")
-                current_exe = sys.executable if (getattr(sys, 'frozen', False) or "__compiled__" in globals()) else os.path.abspath(__file__)
-                if not (getattr(sys, 'frozen', False) or "__compiled__" in globals()):
+                current_exe = sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(__file__)
+                if not getattr(sys, 'frozen', False):
                     self.root.after(0, lambda: self.btn_update.configure(text="Update downloaded (Run script manually)"))
                     return
                 
+                # Create exclude file to protect config json files during xcopy OVERWRITE operation
+                exclude_txt = os.path.join(temp_update_dir, "exclude.txt")
+                with open(exclude_txt, "w") as f:
+                    f.write(".json\n")
+                    
                 with open(bat_path, "w") as f:
                     f.write("@echo off\n"
-                            "timeout /t 2 /nobreak >nul\n"
-                            f"del \"{current_exe}\"\n"
-                            f"ren \"{new_exe}\" \"{os.path.basename(current_exe)}\"\n"
+                            "timeout /t 3 /nobreak >nul\n"
+                            f"xcopy \"{temp_update_dir}\\*\" \"{BASE_DIR}\\\" /S /Y /EXCLUDE:{exclude_txt} >nul\n"
+                            f"rmdir /S /Q \"{temp_update_dir}\"\n"
+                            f"del \"{zip_path}\"\n"
                             f"start \"\" \"{current_exe}\"\n"
                             f"del \"%~f0\"\n")
                 
-                # Clear PyInstaller's hidden environment flags to prevent the new EXE from crashing 
-                # as it tries to read the dying parent's transient extraction folder.
-                clean_env = os.environ.copy()
-                clean_env.pop("_MEIPASS2", None)
-                clean_env.pop("_MEIPASS", None)
-                clean_env.pop("TCL_LIBRARY", None)
-                clean_env.pop("TK_LIBRARY", None)
-                
-                subprocess.Popen(bat_path, shell=True, env=clean_env, creationflags=0x00000008)  # DETACHED_PROCESS
-                # Gracefully drop connection before swapping executables
+                subprocess.Popen(bat_path, shell=True)
+                # Gracefully drop connection before exiting the main process
                 self.root.after(0, self.on_closing)
             except Exception as e:
                 self.root.after(0, lambda: self.btn_update.configure(text=f"Update Failed: {e}"))
