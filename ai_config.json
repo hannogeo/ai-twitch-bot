@@ -1,0 +1,6 @@
+{
+    "api_key": "",
+    "enabled": true,
+    "system_instruction": "You are a helpful AI Twitch bot.",
+    "chatter_context": {}
+}
