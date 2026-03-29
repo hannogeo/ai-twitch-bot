@@ -29,7 +29,7 @@ except ImportError:
 # Global Configuration & Paths
 # ──────────────────────────────────────────────────────────────────────────────
 
-VERSION = "1.0.4"
+VERSION = "1.0.5"
 GITHUB_REPO = "hannogeo/ai-twitch-bot"  # EDIT THIS to enable Auto-Updates
 
 if getattr(sys, 'frozen', False) or "__compiled__" in globals():

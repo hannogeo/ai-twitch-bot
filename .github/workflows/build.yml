@@ -27,7 +27,7 @@ jobs:
         
     - name: Build Executable pipeline (Nuitka C-Compiler)
       run: |
-        python -m nuitka --standalone --onefile --windows-console-mode=disable --enable-plugin=tk-inter --include-package-data=customtkinter --output-dir=dist --output-filename=AIChatbot.exe main.py
+        python -m nuitka --assume-yes-for-downloads --standalone --onefile --windows-console-mode=disable --enable-plugin=tk-inter --include-package-data=customtkinter --output-dir=dist --output-filename=AIChatbot.exe main.py
         
     - name: Create Release
       id: create_release
