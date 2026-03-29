@@ -30,7 +30,7 @@ except ImportError:
 # ──────────────────────────────────────────────────────────────────────────────
 
 VERSION = "1.0.8"
-GITHUB_REPO = "hannogeo/ai-twitch-bot"  # EDIT THIS to enable Auto-Updates
+GITHUB_REPO = "hannogeo/ai-twitch-bot"
 
 if getattr(sys, 'frozen', False):
     # This ensures bot_config and ai_config save securely NEXT to the App Folder 
@@ -338,19 +338,25 @@ class ModernApp:
 
     def setup_ui(self):
         # Sidebar
-        self.sidebar = ctk.CTkFrame(self.root, width=220, corner_radius=0)
+        self.sidebar = ctk.CTkFrame(self.root, width=240, corner_radius=0)
         self.sidebar.pack(side="left", fill="y")
         self.sidebar.pack_propagate(False)
 
         ctk.CTkLabel(self.sidebar, text="AI Chatbot", font=ctk.CTkFont(size=22, weight="bold"), text_color="#3B8ED0").pack(pady=30)
         
-        self.nav_btns = []
+        self.nav_btns = {}
         for name, page in [("Dashboard", "dashboard"), ("Bot Config", "config"), ("AI Brain", "ai")]:
             btn = ctk.CTkButton(self.sidebar, text=name, command=lambda p=page: self.show_page(p), 
                                 fg_color="transparent", text_color=("gray10", "gray90"), hover_color=("gray70", "gray30"), 
                                 anchor="w", font=ctk.CTkFont(size=14))
             btn.pack(fill="x", padx=15, pady=5)
-            self.nav_btns.append(btn)
+            self.nav_btns[page] = btn
+            
+        # Add credits block to the bottom of the sidebar
+        credits_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+        credits_frame.pack(side="bottom", fill="x", pady=20)
+        ctk.CTkLabel(credits_frame, text="Made with ♥ by Hanno", font=ctk.CTkFont(size=11, slant="italic"), text_color="gray", width=200).pack()
+        ctk.CTkLabel(credits_frame, text=f"v{VERSION}", font=ctk.CTkFont(size=11), text_color="#3B8ED0").pack()
 
         # Main Area
         self.container = ctk.CTkFrame(self.root, fg_color="transparent")
@@ -596,6 +602,14 @@ class ModernApp:
         self.p_dashboard.pack_forget()
         self.p_config.pack_forget()
         self.p_ai.pack_forget()
+        
+        for p, btn in self.nav_btns.items():
+            if p == page_name:
+                # Active tab styling
+                btn.configure(fg_color="#3B8ED0", text_color="white", hover_color="#2A6B9C")
+            else:
+                # Inactive tab styling
+                btn.configure(fg_color="transparent", text_color=("gray10", "gray90"), hover_color=("gray70", "gray30"))
         
         if page_name == "dashboard": self.p_dashboard.pack(fill="both", expand=True)
         elif page_name == "config": self.p_config.pack(fill="both", expand=True)
