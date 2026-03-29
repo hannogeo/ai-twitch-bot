@@ -29,7 +29,7 @@ except ImportError:
 # Global Configuration & Paths
 # ──────────────────────────────────────────────────────────────────────────────
 
-VERSION = "1.0.7"
+VERSION = "1.0.8"
 GITHUB_REPO = "hannogeo/ai-twitch-bot"  # EDIT THIS to enable Auto-Updates
 
 if getattr(sys, 'frozen', False):
@@ -428,8 +428,29 @@ class ModernApp:
 
         def create_entry(parent, label, default, show=""):
             ctk.CTkLabel(parent, text=label, font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", pady=(10, 2))
-            e = ctk.CTkEntry(parent, font=ctk.CTkFont(size=14), show=show, height=40, corner_radius=8)
-            e.pack(fill="x", pady=(0, 10))
+            
+            if show == "*":
+                sub_f = ctk.CTkFrame(parent, fg_color="transparent")
+                sub_f.pack(fill="x", pady=(0, 10))
+                
+                e = ctk.CTkEntry(sub_f, font=ctk.CTkFont(size=14), show="*", height=40, corner_radius=8)
+                e.pack(side="left", fill="x", expand=True)
+                
+                def toggle_show(entry=e, b_eye=None):  # Python variable binding closure trick
+                    if entry.cget("show") == "":
+                        entry.configure(show="*")
+                        b_eye.configure(text="👁")
+                    else:
+                        entry.configure(show="")
+                        b_eye.configure(text="🔒")
+                        
+                btn_eye = ctk.CTkButton(sub_f, text="👁", width=40, height=40, fg_color="#3B8ED0", hover_color="#2A6B9C")
+                btn_eye.configure(command=lambda e=e, b=btn_eye: toggle_show(e, b))
+                btn_eye.pack(side="right", padx=(5, 0))
+            else:
+                e = ctk.CTkEntry(parent, font=ctk.CTkFont(size=14), show=show, height=40, corner_radius=8)
+                e.pack(fill="x", pady=(0, 10))
+                
             e.insert(0, default)
             return e
 
@@ -456,9 +477,24 @@ class ModernApp:
         f.pack(fill="both", expand=True, padx=40, pady=20)
 
         ctk.CTkLabel(f, text="Groq API Key", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", pady=(10, 2))
-        self.e_ai_key = ctk.CTkEntry(f, font=ctk.CTkFont(size=14), show="*", height=40, corner_radius=8)
-        self.e_ai_key.pack(fill="x", pady=(0, 10))
+        
+        sub_ai = ctk.CTkFrame(f, fg_color="transparent")
+        sub_ai.pack(fill="x", pady=(0, 10))
+        
+        self.e_ai_key = ctk.CTkEntry(sub_ai, font=ctk.CTkFont(size=14), show="*", height=40, corner_radius=8)
+        self.e_ai_key.pack(side="left", fill="x", expand=True)
         self.e_ai_key.insert(0, self.ai.config.get("api_key", ""))
+        
+        def toggle_ai_eye():
+            if self.e_ai_key.cget("show") == "":
+                self.e_ai_key.configure(show="*")
+                self.btn_ai_eye.configure(text="👁")
+            else:
+                self.e_ai_key.configure(show="")
+                self.btn_ai_eye.configure(text="🔒")
+                
+        self.btn_ai_eye = ctk.CTkButton(sub_ai, text="👁", width=40, height=40, command=toggle_ai_eye, fg_color="#3B8ED0", hover_color="#2A6B9C")
+        self.btn_ai_eye.pack(side="right", padx=(5, 0))
 
         ctk.CTkLabel(f, text="System Instruction (Persona)", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", pady=(10, 2))
         self.t_ai_instr = ctk.CTkTextbox(f, font=ctk.CTkFont(size=13), height=140, wrap="word", corner_radius=8)
