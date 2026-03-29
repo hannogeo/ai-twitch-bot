@@ -29,7 +29,7 @@ except ImportError:
 # Global Configuration & Paths
 # ──────────────────────────────────────────────────────────────────────────────
 
-VERSION = "1.0.2"
+VERSION = "1.0.3"
 GITHUB_REPO = "hannogeo/ai-twitch-bot"  # EDIT THIS to enable Auto-Updates
 
 if getattr(sys, 'frozen', False):
@@ -640,7 +640,15 @@ class ModernApp:
                             f"start \"\" \"{current_exe}\"\n"
                             f"del \"%~f0\"\n")
                 
-                subprocess.Popen(bat_path, shell=True)
+                # Clear PyInstaller's hidden environment flags to prevent the new EXE from crashing 
+                # as it tries to read the dying parent's transient extraction folder.
+                clean_env = os.environ.copy()
+                clean_env.pop("_MEIPASS2", None)
+                clean_env.pop("_MEIPASS", None)
+                clean_env.pop("TCL_LIBRARY", None)
+                clean_env.pop("TK_LIBRARY", None)
+                
+                subprocess.Popen(bat_path, shell=True, env=clean_env, creationflags=0x00000008)  # DETACHED_PROCESS
                 # Gracefully drop connection before swapping executables
                 self.root.after(0, self.on_closing)
             except Exception as e:
