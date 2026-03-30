@@ -796,44 +796,45 @@ class ModernApp:
         self.btn_update.configure(state="disabled", text="Downloading Update... (Please wait)")
         def _dl():
             try:
-                r = requests.get(url, stream=True)
+                r = requests.get(url, stream=True, timeout=30)
                 zip_path = os.path.join(BASE_DIR, "update.zip")
                 with open(zip_path, "wb") as f:
                     for chunk in r.iter_content(chunk_size=8192):
                         f.write(chunk)
                 
                 temp_update_dir = os.path.join(BASE_DIR, "update_temp")
-                if not os.path.exists(temp_update_dir): os.makedirs(temp_update_dir)
+                if os.path.exists(temp_update_dir): 
+                    import shutil
+                    shutil.rmtree(temp_update_dir)
+                os.makedirs(temp_update_dir)
                 
                 with zipfile.ZipFile(zip_path, 'r') as zf:
                     zf.extractall(temp_update_dir)
+                
+                # The zip contains AIChatbot/ folder, so we need to copy from there
+                source_dir = os.path.join(temp_update_dir, "AIChatbot")
+                if not os.path.exists(source_dir):
+                    raise Exception(f"AIChatbot folder not found in zip. Contents: {os.listdir(temp_update_dir)}")
                 
                 bat_path = os.path.join(BASE_DIR, "update.bat")
                 current_exe = sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(__file__)
                 if not getattr(sys, 'frozen', False):
                     self.root.after(0, lambda: self.btn_update.configure(text="Update downloaded (Run script manually)"))
                     return
-                
-                # Create exclude file to protect config json files during xcopy OVERWRITE operation
-                exclude_txt = os.path.join(temp_update_dir, "exclude.txt")
-                with open(exclude_txt, "w") as f:
-                    f.write("bot_config.json\n")
-                    f.write("ai_config.json\n")
                     
                 with open(bat_path, "w") as f:
                     f.write("@echo off\n"
-                            "timeout /t 3 /nobreak >nul\n"
-                            f"xcopy \"{temp_update_dir}\\*\" \"{BASE_DIR}\\\" /S /Y /EXCLUDE:{exclude_txt} >nul\n"
-                            f"rmdir /S /Q \"{temp_update_dir}\"\n"
-                            f"del \"{zip_path}\"\n"
+                            "timeout /t 2 /nobreak >nul\n"
+                            f"xcopy \"{source_dir}\\*\" \"{BASE_DIR}\\\" /S /Y /EXCLUDE:{os.path.join(source_dir, 'exclude.txt')} >nul 2>&1\n"
+                            f"rmdir /S /Q \"{temp_update_dir}\" >nul 2>&1\n"
+                            f"del \"{zip_path}\" >nul 2>&1\n"
                             f"start \"\" \"{current_exe}\"\n"
                             f"del \"%~f0\"\n")
                 
                 subprocess.Popen(bat_path, shell=True)
-                # Gracefully drop connection before exiting the main process
                 self.root.after(0, self.on_closing)
             except Exception as e:
-                self.root.after(0, lambda: self.btn_update.configure(text=f"Update Failed: {e}"))
+                self.root.after(0, lambda e=e: self.btn_update.configure(text=f"Update Failed: {str(e)[:40]}"))
         threading.Thread(target=_dl, daemon=True).start()
 
     def on_closing(self):
