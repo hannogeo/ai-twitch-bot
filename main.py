@@ -12,12 +12,14 @@ import time
 import json
 import os
 import datetime
+import re
 import tkinter as tk
 from tkinter import messagebox
 import customtkinter as ctk
 from groq import Groq
 import requests
 import subprocess
+import webbrowser
 
 # Attempt to import DuckDuckGo Search
 try:
@@ -29,8 +31,20 @@ except ImportError:
 # Global Configuration & Paths
 # ──────────────────────────────────────────────────────────────────────────────
 
-VERSION = "1.1.0"
 GITHUB_REPO = "hannogeo/ai-twitch-bot"
+
+def _load_version() -> str:
+    """Read version from version.json, falling back to 'unknown' if missing."""
+    # Resolve path relative to the executable (frozen) or this script file
+    _base = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
+    _path = os.path.join(_base, "version.json")
+    try:
+        with open(_path, "r", encoding="utf-8") as _f:
+            return json.load(_f).get("version", "unknown")
+    except Exception:
+        return "unknown"
+
+VERSION = _load_version()
 
 if getattr(sys, 'frozen', False):
     # This ensures bot_config and ai_config save securely NEXT to the App Folder 
@@ -200,7 +214,9 @@ class IRCBot:
         default = {
             "NICK": "", "TOKEN": "", "CHANNEL": "",
             "CONNECT_MSG_ENABLED": True, "CONNECT_MSG": "/me is now connected...",
-            "DISCONNECT_MSG_ENABLED": True, "DISCONNECT_MSG": "/me disconnected!"
+            "DISCONNECT_MSG_ENABLED": True, "DISCONNECT_MSG": "/me disconnected!",
+            "TRIGGER_TAG": True, "TRIGGER_CMD": True, "TRIGGER_REP": True,
+            "TRIGGER_OTHER_REP": True, "COMMANDS": "!ai, !aichat"
         }
         if os.path.exists(BOT_CONFIG_FILE):
             try:
@@ -272,15 +288,44 @@ class IRCBot:
 
                     msg_l = msg.lower()
                     nick_l = self.config['NICK'].lower()
-                    is_ai = f"@{nick_l}" in msg_l or msg_l.startswith("!ai ") or msg_l in ("!ai", "!aichat")
                     parent_user = tags.get("reply-parent-user-login")
-                    is_reply = parent_user and parent_user.lower() == nick_l
+                    
+                    t_tag = self.config.get("TRIGGER_TAG", True)
+                    t_cmd = self.config.get("TRIGGER_CMD", True)
+                    t_rep = self.config.get("TRIGGER_REP", True)
+                    t_other_rep = self.config.get("TRIGGER_OTHER_REP", True)
+                    
+                    raw_cmds = self.config.get("COMMANDS", "!ai, !aichat")
+                    cmds = sorted([c.strip().lower() for c in raw_cmds.split(",") if c.strip()], key=len, reverse=True)
 
-                    if is_ai or is_reply:
+                    is_tag = t_tag and f"@{nick_l}" in msg_l
+                    is_rep = t_rep and parent_user and parent_user.lower() == nick_l
+                    
+                    is_cmd = False
+                    matched_cmd = None
+                    if t_cmd:
+                        for c in cmds:
+                            if not c: continue
+                            if msg_l.startswith(c + " ") or msg_l == c:
+                                is_cmd = True
+                                matched_cmd = c
+                                break
+
+                    # Block if it's a reply to someone else and that toggle is OFF
+                    if parent_user and parent_user.lower() != nick_l and not t_other_rep:
+                        can_trigger = False
+                    else:
+                        can_trigger = is_tag or is_cmd or is_rep
+
+                    if can_trigger:
                         prompt = msg.strip()
-                        if msg_l.startswith("!ai"): prompt = msg[3:].strip()
-                        elif msg_l.startswith("!aichat"): prompt = msg[7:].strip()
-                        elif f"@{nick_l}" in msg_l: prompt = msg_l.replace(f"@{nick_l}", "").strip()
+                        if matched_cmd:
+                            if msg_l.startswith(matched_cmd + " "):
+                                prompt = msg[len(matched_cmd):].strip()
+                            else:
+                                prompt = ""
+                        elif is_tag:
+                            prompt = re.sub(rf"@{re.escape(nick_l)}", "", msg, flags=re.IGNORECASE).strip()
                         
                         if not prompt: prompt = "Say hi!"
                         
@@ -355,7 +400,7 @@ class ModernApp:
         # Add credits block to the bottom of the sidebar
         credits_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
         credits_frame.pack(side="bottom", fill="x", pady=20)
-        ctk.CTkLabel(credits_frame, text="Made with ♥ by Hanno", font=ctk.CTkFont(size=11, slant="italic"), text_color="gray", width=200).pack()
+        ctk.CTkLabel(credits_frame, text=" Made with ♥ by HannoGeo ", font=ctk.CTkFont(size=11, slant="italic"), text_color="gray", width=200).pack()
         ctk.CTkLabel(credits_frame, text=f"v{VERSION}", font=ctk.CTkFont(size=11), text_color="#3B8ED0").pack()
 
         # Main Area
@@ -432,17 +477,17 @@ class ModernApp:
         f = ctk.CTkFrame(self.p_config, fg_color="transparent")
         f.pack(fill="x", padx=40, pady=20)
 
-        def create_entry(parent, label, default, show=""):
+        def create_entry(parent, label, default, explanation, show=""):
             ctk.CTkLabel(parent, text=label, font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", pady=(10, 2))
             
             if show == "*":
                 sub_f = ctk.CTkFrame(parent, fg_color="transparent")
-                sub_f.pack(fill="x", pady=(0, 10))
+                sub_f.pack(fill="x", pady=(0, 2))
                 
                 e = ctk.CTkEntry(sub_f, font=ctk.CTkFont(size=14), show="*", height=40, corner_radius=8)
                 e.pack(side="left", fill="x", expand=True)
                 
-                def toggle_show(entry=e, b_eye=None):  # Python variable binding closure trick
+                def toggle_show(entry=e, b_eye=None):
                     if entry.cget("show") == "":
                         entry.configure(show="*")
                         b_eye.configure(text="👁")
@@ -450,30 +495,68 @@ class ModernApp:
                         entry.configure(show="")
                         b_eye.configure(text="🔒")
                         
-                btn_eye = ctk.CTkButton(sub_f, text="👁", width=40, height=40, fg_color="#3B8ED0", hover_color="#2A6B9C")
+                btn_eye = ctk.CTkButton(sub_f, text="👁", width=40, height=40, fg_color="#343638", hover_color="#3E4042", text_color="gray")
                 btn_eye.configure(command=lambda e=e, b=btn_eye: toggle_show(e, b))
                 btn_eye.pack(side="right", padx=(5, 0))
             else:
                 e = ctk.CTkEntry(parent, font=ctk.CTkFont(size=14), show=show, height=40, corner_radius=8)
-                e.pack(fill="x", pady=(0, 10))
+                e.pack(fill="x", pady=(0, 2))
                 
+            if explanation:
+                ctk.CTkLabel(parent, text=explanation, text_color="gray", font=ctk.CTkFont(size=11)).pack(anchor="w", pady=(0, 10))
             e.insert(0, default)
             return e
 
-        self.e_nick = create_entry(f, "Bot Username", self.bot.config.get("NICK", ""))
-        self.e_token = create_entry(f, "OAuth Token (oauth:xxx)", self.bot.config.get("TOKEN", ""), show="*")
-        self.e_chan = create_entry(f, "Channel", self.bot.config.get("CHANNEL", ""))
+        self.e_nick = create_entry(f, "Bot Username", self.bot.config.get("NICK", ""), "The exact Twitch account name of your bot.")
+        self.e_token = create_entry(f, "OAuth Token", self.bot.config.get("TOKEN", ""), "", show="*")
+        _token_row = ctk.CTkFrame(f, fg_color="transparent")
+        _token_row.pack(anchor="w", pady=(0, 10))
+        ctk.CTkLabel(_token_row, text="Your private access token. Get it at ", text_color="gray", font=ctk.CTkFont(size=11)).pack(side="left")
+        ctk.CTkButton(_token_row, text="twitchtokengenerator.com", font=ctk.CTkFont(size=11, underline=True), fg_color="transparent", text_color="#3B8ED0", hover_color=("gray85", "gray20"), height=18, width=0, command=lambda: webbrowser.open("https://twitchtokengenerator.com")).pack(side="left")
+        self.e_chan = create_entry(f, "Target Channel", self.bot.config.get("CHANNEL", ""), "The channel where you want the bot to chat.")
         
         # Connection Message Toggles
-        self.sw_conn = ctk.CTkSwitch(f, text="Send Connect Message to Chat", font=ctk.CTkFont(size=14))
-        self.sw_conn.pack(anchor="w", pady=(15, 5))
+        self.sw_conn = ctk.CTkSwitch(f, text="Send Connect Message", font=ctk.CTkFont(size=14))
+        self.sw_conn.pack(anchor="w", pady=(15, 0))
         if self.bot.config.get("CONNECT_MSG_ENABLED", True): self.sw_conn.select()
+        ctk.CTkLabel(f, text="Greets the chat when the bot finishes connecting.", text_color="gray", font=ctk.CTkFont(size=11)).pack(anchor="w", padx=35, pady=(0, 5))
         
-        self.sw_disc = ctk.CTkSwitch(f, text="Send Disconnect Message to Chat", font=ctk.CTkFont(size=14))
-        self.sw_disc.pack(anchor="w", pady=(5, 20))
+        self.sw_disc = ctk.CTkSwitch(f, text="Send Disconnect Message", font=ctk.CTkFont(size=14))
+        self.sw_disc.pack(anchor="w", pady=(5, 0))
         if self.bot.config.get("DISCONNECT_MSG_ENABLED", True): self.sw_disc.select()
+        ctk.CTkLabel(f, text="Says goodbye when you manually stop the bot.", text_color="gray", font=ctk.CTkFont(size=11)).pack(anchor="w", padx=35, pady=(0, 20))
         
-        ctk.CTkButton(f, text="Save Settings", font=ctk.CTkFont(weight="bold", size=14), height=45, corner_radius=8, command=self.save_bot_config).pack(fill="x", pady=20)
+        # Activation Toggles
+        ctk.CTkLabel(f, text="AI ACTIVATION SETTINGS", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", pady=(20, 10))
+        
+        _nick = self.bot.config.get("NICK", "").strip() or "BotUsername"
+        self.sw_tag = ctk.CTkSwitch(f, text=f"Activate on @{_nick} Tag", font=ctk.CTkFont(size=13))
+        self.sw_tag.pack(anchor="w", pady=(5, 0))
+        if self.bot.config.get("TRIGGER_TAG", True): self.sw_tag.select()
+        ctk.CTkLabel(f, text="Triggers when someone tags the bot's username in a message.", text_color="gray", font=ctk.CTkFont(size=11)).pack(anchor="w", padx=35, pady=(0, 10))
+
+        self.sw_cmd = ctk.CTkSwitch(f, text="Activate on Commands", font=ctk.CTkFont(size=13))
+        self.sw_cmd.pack(anchor="w", pady=(5, 0))
+        if self.bot.config.get("TRIGGER_CMD", True): self.sw_cmd.select()
+        ctk.CTkLabel(f, text="Triggers when a message starts with one of the prefixes below.", text_color="gray", font=ctk.CTkFont(size=11)).pack(anchor="w", padx=35, pady=(0, 10))
+
+        self.sw_rep = ctk.CTkSwitch(f, text="Activate on Direct Replies", font=ctk.CTkFont(size=13))
+        self.sw_rep.pack(anchor="w", pady=(5, 0))
+        if self.bot.config.get("TRIGGER_REP", True): self.sw_rep.select()
+        ctk.CTkLabel(f, text="Triggers when someone uses the 'Reply' feature on a bot message.", text_color="gray", font=ctk.CTkFont(size=11)).pack(anchor="w", padx=35, pady=(0, 10))
+
+        self.sw_other_rep = ctk.CTkSwitch(f, text="Allow Triggers inside Other Replies", font=ctk.CTkFont(size=13))
+        self.sw_other_rep.pack(anchor="w", pady=(5, 0))
+        if self.bot.config.get("TRIGGER_OTHER_REP", True): self.sw_other_rep.select()
+        ctk.CTkLabel(f, text="If ON, commands/tags still trigger even if sent in a reply to someone else.", text_color="gray", font=ctk.CTkFont(size=11)).pack(anchor="w", padx=35, pady=(0, 10))
+
+        ctk.CTkLabel(f, text="Custom Commands (comma separated)", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", pady=(15, 2))
+        self.e_cmds = ctk.CTkEntry(f, font=ctk.CTkFont(size=14), height=40, corner_radius=8)
+        self.e_cmds.pack(fill="x", pady=(0, 2))
+        self.e_cmds.insert(0, self.bot.config.get("COMMANDS", "!ai, !aichat"))
+        ctk.CTkLabel(f, text="Ex: !ai, !chat, !ask. Separate multiple options with commas.", text_color="gray", font=ctk.CTkFont(size=11)).pack(anchor="w", pady=(0, 10))
+        
+        ctk.CTkButton(f, text="Save Bot Settings", font=ctk.CTkFont(weight="bold", size=14), height=45, corner_radius=8, command=self.save_bot_config).pack(fill="x", pady=20)
 
     def build_ai(self):
         ctk.CTkLabel(self.p_ai, text="AI BRAIN SETTINGS", font=ctk.CTkFont(size=28, weight="bold")).pack(anchor="w", padx=40, pady=(40, 5))
@@ -482,10 +565,16 @@ class ModernApp:
         f = ctk.CTkFrame(self.p_ai, fg_color="transparent")
         f.pack(fill="both", expand=True, padx=40, pady=20)
 
+        # Master Enable Toggle
+        self.sw_ai_enabled = ctk.CTkSwitch(f, text="AI Brain Enabled (Global)", font=ctk.CTkFont(size=14, weight="bold"), progress_color="#9ECE6A")
+        self.sw_ai_enabled.pack(anchor="w", pady=(0, 2))
+        if self.ai.config.get("enabled", True): self.sw_ai_enabled.select()
+        ctk.CTkLabel(f, text="Master switch to turn all AI features on or off without disconnecting the bot.", text_color="gray", font=ctk.CTkFont(size=11)).pack(anchor="w", padx=35, pady=(0, 20))
+
         ctk.CTkLabel(f, text="Groq API Key", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", pady=(10, 2))
         
         sub_ai = ctk.CTkFrame(f, fg_color="transparent")
-        sub_ai.pack(fill="x", pady=(0, 10))
+        sub_ai.pack(fill="x", pady=(0, 2))
         
         self.e_ai_key = ctk.CTkEntry(sub_ai, font=ctk.CTkFont(size=14), show="*", height=40, corner_radius=8)
         self.e_ai_key.pack(side="left", fill="x", expand=True)
@@ -499,13 +588,18 @@ class ModernApp:
                 self.e_ai_key.configure(show="")
                 self.btn_ai_eye.configure(text="🔒")
                 
-        self.btn_ai_eye = ctk.CTkButton(sub_ai, text="👁", width=40, height=40, command=toggle_ai_eye, fg_color="#3B8ED0", hover_color="#2A6B9C")
+        self.btn_ai_eye = ctk.CTkButton(sub_ai, text="👁", width=40, height=40, command=toggle_ai_eye, fg_color="#343638", hover_color="#3E4042", text_color="gray")
         self.btn_ai_eye.pack(side="right", padx=(5, 0))
+        _groq_row = ctk.CTkFrame(f, fg_color="transparent")
+        _groq_row.pack(anchor="w", pady=(0, 10))
+        ctk.CTkLabel(_groq_row, text="Required to connect to the LLM. Get your free key at ", text_color="gray", font=ctk.CTkFont(size=11)).pack(side="left")
+        ctk.CTkButton(_groq_row, text="console.groq.com/keys", font=ctk.CTkFont(size=11, underline=True), fg_color="transparent", text_color="#3B8ED0", hover_color=("gray85", "gray20"), height=18, width=0, command=lambda: webbrowser.open("https://console.groq.com/keys")).pack(side="left")
 
         ctk.CTkLabel(f, text="System Instruction (Persona)", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", pady=(10, 2))
         self.t_ai_instr = ctk.CTkTextbox(f, font=ctk.CTkFont(size=13), height=140, wrap="word", corner_radius=8)
         self.t_ai_instr.pack(fill="both", expand=True)
         self.t_ai_instr.insert("1.0", self.ai.config.get("system_instruction", ""))
+        ctk.CTkLabel(f, text="Describe the bot's behavior, tone, and any fundamental rules or knowledge.", text_color="gray", font=ctk.CTkFont(size=11)).pack(anchor="w", pady=(2, 20))
 
         self._isolate_scroll(self.t_ai_instr, self.p_ai)
         self._auto_resize_textbox(self.t_ai_instr)
@@ -513,7 +607,8 @@ class ModernApp:
         ctk.CTkButton(f, text="Save AI Settings", font=ctk.CTkFont(weight="bold", size=14), height=45, corner_radius=8, command=self.save_ai_config).pack(fill="x", pady=20)
 
         # Chatter Contexts
-        ctk.CTkLabel(self.p_ai, text="CHATTER CONTEXTS", font=ctk.CTkFont(size=20, weight="bold")).pack(anchor="w", padx=40, pady=(30, 10))
+        ctk.CTkLabel(self.p_ai, text="CHATTER CONTEXTS", font=ctk.CTkFont(size=20, weight="bold")).pack(anchor="w", padx=40, pady=(30, 2))
+        ctk.CTkLabel(self.p_ai, text="Add context about specific chatters so the bot can personalise responses to them.", text_color="gray", font=ctk.CTkFont(size=11)).pack(anchor="w", padx=40, pady=(0, 10))
         
         self.ctx_container = ctk.CTkFrame(self.p_ai, fg_color="transparent")
         self.ctx_container.pack(fill="both", expand=True, padx=40)
@@ -650,14 +745,32 @@ class ModernApp:
         data["CONNECT_MSG_ENABLED"] = bool(self.sw_conn.get())
         data["DISCONNECT_MSG_ENABLED"] = bool(self.sw_disc.get())
         
+        # Update dynamic label for @Mention switch
+        _nick = data["NICK"] or "BotUsername"
+        self.sw_tag.configure(text=f"Activate on @{_nick} Tag")
+
+        data["TRIGGER_TAG"] = bool(self.sw_tag.get())
+        data["TRIGGER_CMD"] = bool(self.sw_cmd.get())
+        data["TRIGGER_REP"] = bool(self.sw_rep.get())
+        data["TRIGGER_OTHER_REP"] = bool(self.sw_other_rep.get())
+        data["COMMANDS"] = self.e_cmds.get().strip()
+        
         self.bot.save_config(data)
         messagebox.showinfo("Success", "Bot settings saved!")
 
     def save_ai_config(self):
         key = self.e_ai_key.get().strip()
         instr = self.t_ai_instr.get("1.0", "end").strip()
-        self.ai.update_config(key, instr)
+        
+        is_en = bool(self.sw_ai_enabled.get())
+
+        self.ai.update_config(key, instr, enabled=is_en)
         messagebox.showinfo("Success", "AI settings saved!")
+        
+        if not is_en:
+            self.log("AI Brain has been disabled.", "#F7768E")
+        else:
+            self.log("AI Brain settings updated.", "#9ECE6A")
 
     def check_for_updates(self):
         try:
@@ -704,7 +817,8 @@ class ModernApp:
                 # Create exclude file to protect config json files during xcopy OVERWRITE operation
                 exclude_txt = os.path.join(temp_update_dir, "exclude.txt")
                 with open(exclude_txt, "w") as f:
-                    f.write(".json\n")
+                    f.write("bot_config.json\n")
+                    f.write("ai_config.json\n")
                     
                 with open(bat_path, "w") as f:
                     f.write("@echo off\n"

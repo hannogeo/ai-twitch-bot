@@ -35,7 +35,7 @@ jobs:
         
     - name: Build Directory Structure
       run: |
-        pyinstaller --noconfirm --onedir --windowed --name "AIChatbot" --collect-all customtkinter main.py
+        pyinstaller --noconfirm --onedir --windowed --name "AIChatbot" --collect-all customtkinter --add-data "version.json;." main.py
         
     - name: Zip the Output
       run: |
