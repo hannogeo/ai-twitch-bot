@@ -550,7 +550,7 @@ class ModernApp:
         if self.bot.config.get("TRIGGER_OTHER_REP", True): self.sw_other_rep.select()
         ctk.CTkLabel(f, text="If ON, commands/tags still trigger even if sent in a reply to someone else.", text_color="gray", font=ctk.CTkFont(size=11)).pack(anchor="w", padx=35, pady=(0, 10))
 
-        ctk.CTkLabel(f, text="Custom Commands (comma separated)", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", pady=(15, 2))
+        ctk.CTkLabel(f, text="Custom Commands", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", pady=(15, 2))
         self.e_cmds = ctk.CTkEntry(f, font=ctk.CTkFont(size=14), height=40, corner_radius=8)
         self.e_cmds.pack(fill="x", pady=(0, 2))
         self.e_cmds.insert(0, self.bot.config.get("COMMANDS", "!ai, !aichat"))
