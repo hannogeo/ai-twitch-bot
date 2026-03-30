@@ -4,7 +4,7 @@
 
 ## Setup
 
-<p>Just download the ZIP, extract the files to a folder, and run the app. When using the app, it will also create some new .json files in that folder, do not delete or edit any of those, they are necessary for saving all your settings.<br>I would also recommend to pin the app to your Start Menu or taskbar to access it easily later on.</p>
+<p>Just download the installer .exe and go through the installation wizard. Run the app (it will also ask if you want to add a shortcut to your desktop, which I would recommend doing)</p>
 <p>You can then set it up by going to the Bot Config settings, entering the username of the channel you're streaming on and the username of the bot channel (the channel that will be used for sending bot messages) You will also need to enter an OAuth token, which you can find on https://twitchtokengenerator.com</p>
 <p>To save changes, click on the "Save Settings" button.</p>
 <img src="botconfig.png" alt="Bot setup screenshot" width="600">
