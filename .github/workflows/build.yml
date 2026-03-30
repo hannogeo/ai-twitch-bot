@@ -33,11 +33,20 @@ jobs:
       run: |
         Compress-Archive -Path dist\AIChatbot\* -DestinationPath dist\AIChatbot.zip
         
+    - name: Install Inno Setup
+      run: choco install innosetup -y
+      
+    - name: Build Installer
+      run: |
+        iscc installer.iss
+        
     - name: Create Release
       id: create_release
       uses: softprops/action-gh-release@v1
       with:
-        files: dist/AIChatbot.zip
+        files: |
+          dist/AIChatbot-Setup.exe
+          dist/AIChatbot.zip
         name: Release ${{ github.ref_name }}
         draft: false
         prerelease: false
