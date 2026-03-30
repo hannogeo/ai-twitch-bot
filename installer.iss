@@ -1,6 +1,6 @@
 ; Inno Setup Script for AI Chatbot
 #define MyAppName "AI Chatbot"
-#define MyAppVersion "1.1.5"
+#define MyAppVersion "1.1.6"
 #define MyAppPublisher "hannogeo"
 #define MyAppURL "https://github.com/hannogeo/ai-twitch-bot"
 #define MyAppExeName "AIChatbot.exe"
@@ -34,6 +34,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "dist\AIChatbot\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\AIChatbot\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "version.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "bot_config.json"; DestDir: "{app}"; Flags: ignoreversion onlyifdoesntexist
 Source: "ai_config.json"; DestDir: "{app}"; Flags: ignoreversion onlyifdoesntexist
 
