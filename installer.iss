@@ -1,6 +1,6 @@
 ; Inno Setup Script for AI Chatbot
 #define MyAppName "AI Chatbot"
-#define MyAppVersion "1.1.6"
+#define MyAppVersion "1.1.7"
 #define MyAppPublisher "hannogeo"
 #define MyAppURL "https://github.com/hannogeo/ai-twitch-bot"
 #define MyAppExeName "AIChatbot.exe"
@@ -16,7 +16,6 @@ AppUpdatesURL={#MyAppURL}
 DefaultDirName={localappdata}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
-LicenseFile=README.md
 OutputDir=dist
 OutputBaseFilename=AIChatbot-Setup
 Compression=lzma
