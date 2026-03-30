@@ -25,14 +25,6 @@ jobs:
         python -m pip install --upgrade pip
         pip install pyinstaller customtkinter groq duckduckgo-search requests
         
-    - name: Build PyInstaller from Source (Antivirus Bypass)
-      run: |
-        git clone https://github.com/pyinstaller/pyinstaller.git
-        cd pyinstaller/bootloader
-        python ./waf all --target-arch=64bit
-        cd ..
-        pip install .
-        
     - name: Build Directory Structure
       run: |
         pyinstaller --noconfirm --onedir --windowed --name "AIChatbot" --collect-all customtkinter --add-data "version.json;." main.py
