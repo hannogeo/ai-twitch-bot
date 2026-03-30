@@ -782,8 +782,10 @@ class ModernApp:
                 current = VERSION.lstrip("v")
                 if latest > current:
                     assets = data.get("assets", [])
-                    if assets:
-                        dl_url = assets[0]["browser_download_url"]
+                    # Find the .zip file specifically, not the installer
+                    zip_asset = next((a for a in assets if a["name"].endswith(".zip")), None)
+                    if zip_asset:
+                        dl_url = zip_asset["browser_download_url"]
                         self.root.after(0, lambda: self.show_update_button(latest, dl_url))
         except: pass
 
