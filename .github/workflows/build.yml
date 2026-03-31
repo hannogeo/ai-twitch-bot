@@ -27,7 +27,7 @@ jobs:
         
     - name: Build Directory Structure
       run: |
-        pyinstaller --noconfirm --onedir --windowed --name "AIChatbot" --collect-all customtkinter --add-data "version.json;." main.py
+        pyinstaller --noconfirm --onedir --windowed --name "AIChatbot" --icon "app_icon.ico" --collect-all customtkinter --add-data "version.json;." --add-data "app_icon.ico;." main.py
         Copy-Item version.json dist\AIChatbot\ -Force
         
     - name: Zip the Output

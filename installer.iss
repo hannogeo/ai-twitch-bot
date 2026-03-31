@@ -23,6 +23,7 @@ SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=lowest
 ChangesAssociations=no
+SetupIconFile=app_icon.ico
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -34,13 +35,14 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "dist\AIChatbot\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\AIChatbot\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "version.json"; DestDir: "{app}"; Flags: ignoreversion
+Source: "app_icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "bot_config.json"; DestDir: "{app}"; Flags: ignoreversion onlyifdoesntexist
 Source: "ai_config.json"; DestDir: "{app}"; Flags: ignoreversion onlyifdoesntexist
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\app_icon.ico"
 Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; IconFilename: "{app}\app_icon.ico"
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent

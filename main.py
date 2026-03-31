@@ -53,6 +53,8 @@ if getattr(sys, 'frozen', False):
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+ICON_PATH = os.path.join(BASE_DIR, "app_icon.ico")
+
 BOT_CONFIG_FILE = os.path.join(BASE_DIR, "bot_config.json")
 AI_CONFIG_FILE = os.path.join(BASE_DIR, "ai_config.json")
 
@@ -566,7 +568,7 @@ class ModernApp:
         f.pack(fill="both", expand=True, padx=40, pady=20)
 
         # Master Enable Toggle
-        self.sw_ai_enabled = ctk.CTkSwitch(f, text="AI Brain Enabled (Global)", font=ctk.CTkFont(size=14, weight="bold"), progress_color="#9ECE6A")
+        self.sw_ai_enabled = ctk.CTkSwitch(f, text="AI Brain Enabled (Global)", font=ctk.CTkFont(size=14, weight="bold"))
         self.sw_ai_enabled.pack(anchor="w", pady=(0, 2))
         if self.ai.config.get("enabled", True): self.sw_ai_enabled.select()
         ctk.CTkLabel(f, text="Master switch to turn all AI features on or off without disconnecting the bot.", text_color="gray", font=ctk.CTkFont(size=11)).pack(anchor="w", padx=35, pady=(0, 20))
@@ -665,6 +667,13 @@ class ModernApp:
 
             def make_delete(u=user):
                 def do_delete():
+                    confirmed = messagebox.askyesno(
+                        "Remove Context",
+                        f"Are you sure you want to remove the context for @{u}?\n\nThis cannot be undone.",
+                        icon="warning"
+                    )
+                    if not confirmed:
+                        return
                     c = self.ai.config.get("chatter_context", {})
                     if u in c:
                         del c[u]
@@ -857,5 +866,7 @@ class ModernApp:
 
 if __name__ == "__main__":
     root = ctk.CTk()
+    if os.path.exists(ICON_PATH):
+        root.iconbitmap(ICON_PATH)
     app = ModernApp(root)
     root.mainloop()
