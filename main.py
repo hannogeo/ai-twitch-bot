@@ -839,14 +839,25 @@ class ModernApp:
                     self.root.after(0, lambda: self.btn_update.configure(text="Update downloaded (Run script manually)"))
                     return
                     
+                exe_name = os.path.basename(current_exe)
+                exclude_file = os.path.join(source_dir, 'exclude.txt')
                 with open(bat_path, "w") as f:
+                    # Wait until the original process has exited, then copy files and relaunch
                     f.write("@echo off\n"
-                            "timeout /t 2 /nobreak >nul\n"
-                            f"xcopy \"{source_dir}\\*\" \"{BASE_DIR}\\\" /S /Y /EXCLUDE:{os.path.join(source_dir, 'exclude.txt')} >nul 2>&1\n"
+                            f"set EXE_NAME={exe_name}\n"
+                            "echo Waiting for application to exit...\n"
+                            ":waitloop\n"
+                            "tasklist /FI \"IMAGENAME eq %EXE_NAME%\" 2>NUL | find /I \"%EXE_NAME%\" >NUL\n"
+                            "if %ERRORLEVEL%==0 (\n"
+                            "  timeout /t 1 /nobreak >nul\n"
+                            "  goto waitloop\n"
+                            ")\n"
+                            "echo Copying update files...\n"
+                            f"xcopy \"{source_dir}\\*\" \"{BASE_DIR}\\\" /S /Y {('/EXCLUDE:' + exclude_file) if os.path.exists(os.path.join(source_dir, 'exclude.txt')) else ''} >nul 2>&1\n"
                             f"rmdir /S /Q \"{temp_update_dir}\" >nul 2>&1\n"
                             f"del \"{zip_path}\" >nul 2>&1\n"
                             f"start \"\" \"{current_exe}\"\n"
-                            f"del \"%~f0\"\n")
+                            "del "%~f0"\n")
                 
                 subprocess.Popen(bat_path, shell=True)
                 self.root.after(0, self.on_closing)
