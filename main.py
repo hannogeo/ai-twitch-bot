@@ -822,11 +822,16 @@ class ModernApp:
                 
                 with zipfile.ZipFile(zip_path, 'r') as zf:
                     zf.extractall(temp_update_dir)
-                
-                # The zip contains AIChatbot/ folder, so we need to copy from there
+
+                # The zip should contain an AIChatbot/ folder, but handle both cases
                 source_dir = os.path.join(temp_update_dir, "AIChatbot")
                 if not os.path.exists(source_dir):
-                    raise Exception(f"AIChatbot folder not found in zip. Contents: {os.listdir(temp_update_dir)}")
+                    # If the folder is missing, use the extracted root (files are at top level)
+                    source_dir = temp_update_dir
+
+                # Verify the source directory exists
+                if not os.path.exists(source_dir):
+                    raise Exception(f"Could not find update files in zip. Contents: {os.listdir(temp_update_dir)}")
                 
                 bat_path = os.path.join(BASE_DIR, "update.bat")
                 current_exe = sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(__file__)
