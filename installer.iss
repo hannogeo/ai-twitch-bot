@@ -1,6 +1,6 @@
 ; Inno Setup Script for AI Chatbot
 #define MyAppName "AI Chatbot"
-#define MyAppVersion "1.2.3"
+#define MyAppVersion "1.2.4"
 #define MyAppPublisher "hannogeo"
 #define MyAppURL "https://github.com/hannogeo/ai-twitch-bot"
 #define MyAppExeName "AIChatbot.exe"
