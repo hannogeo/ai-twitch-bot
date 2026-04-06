@@ -313,9 +313,10 @@ class IRCBot:
                                 matched_cmd = c
                                 break
 
-                    # Block if it's a reply to someone else and that toggle is OFF
+                    # Block tag/reply triggers if it's a reply to someone else and that toggle is OFF
+                    # But commands should ALWAYS work in replies
                     if parent_user and parent_user.lower() != nick_l and not t_other_rep:
-                        can_trigger = False
+                        can_trigger = is_cmd
                     else:
                         can_trigger = is_tag or is_cmd or is_rep
 
