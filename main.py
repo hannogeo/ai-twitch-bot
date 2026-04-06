@@ -840,8 +840,9 @@ class ModernApp:
                     return
                     
                 exe_name = os.path.basename(current_exe)
-                exclude_file = os.path.join(source_dir, 'exclude.txt')
                 log_file = os.path.join(BASE_DIR, "update_log.txt")
+                exclude_file = os.path.join(source_dir, 'exclude.txt')
+                exclude_clause = f"/EXCLUDE:{exclude_file}" if os.path.exists(exclude_file) else ""
                 
                 with open(bat_path, "w") as f:
                     bat_lines = [
@@ -857,7 +858,7 @@ class ModernApp:
                         ')',
                         'echo Application exited. Starting update... >> "%LOG_FILE%"',
                         f'echo Copying from {source_dir} to {BASE_DIR} >> "%LOG_FILE%"',
-                        f'xcopy "{source_dir}\\*" "{BASE_DIR}\\" /S /Y /EXCLUDE:{exclude_file} 2>&1 >> "%LOG_FILE%"',
+                        f'xcopy "{source_dir}\\*" "{BASE_DIR}\\" /S /Y {exclude_clause} 2>&1 >> "%LOG_FILE%"',
                         f'if %ERRORLEVEL% neq 0 echo ERROR: xcopy failed with code %ERRORLEVEL% >> "%LOG_FILE%"',
                         f'rmdir /S /Q "{temp_update_dir}" 2>&1 >> "%LOG_FILE%"',
                         f'del "{zip_path}" 2>&1 >> "%LOG_FILE%"',
@@ -869,7 +870,14 @@ class ModernApp:
                     ]
                     f.write("\n".join(bat_lines))
                 
-                subprocess.Popen(bat_path, shell=True)
+                # Use subprocess with CREATE_NEW_PROCESS_GROUP to detach batch process
+                subprocess.Popen(
+                    [bat_path],
+                    shell=True,
+                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if hasattr(subprocess, 'CREATE_NEW_PROCESS_GROUP') else 0,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
                 self.root.after(0, self.on_closing)
             except Exception as e:
                 self.root.after(0, lambda e=e: self.btn_update.configure(text=f"Update Failed: {str(e)[:40]}"))
