@@ -841,24 +841,29 @@ class ModernApp:
                     
                 exe_name = os.path.basename(current_exe)
                 exclude_file = os.path.join(source_dir, 'exclude.txt')
-                exclude_clause = f"/EXCLUDE:{exclude_file}" if os.path.exists(exclude_file) else ""
+                log_file = os.path.join(BASE_DIR, "update_log.txt")
+                
                 with open(bat_path, "w") as f:
-                    # Build batch content as a list of lines to avoid tricky nested quoting
                     bat_lines = [
                         "@echo off",
                         f"set EXE_NAME={exe_name}",
-                        "echo Waiting for application to exit...",
+                        f"set LOG_FILE={log_file}",
+                        'echo Waiting for application to exit... >> "%LOG_FILE%"',
                         ":waitloop",
                         'tasklist /FI "IMAGENAME eq %EXE_NAME%" 2>NUL | find /I "%EXE_NAME%" >NUL',
                         'if %ERRORLEVEL%==0 (',
                         '  timeout /t 1 /nobreak >nul',
                         '  goto waitloop',
                         ')',
-                        'echo Copying update files...',
-                        f'xcopy "{source_dir}\\*" "{BASE_DIR}\\" /S /Y {exclude_clause} >nul 2>&1',
-                        f'rmdir /S /Q "{temp_update_dir}" >nul 2>&1',
-                        f'del "{zip_path}" >nul 2>&1',
+                        'echo Application exited. Starting update... >> "%LOG_FILE%"',
+                        f'echo Copying from {source_dir} to {BASE_DIR} >> "%LOG_FILE%"',
+                        f'xcopy "{source_dir}\\*" "{BASE_DIR}\\" /S /Y /EXCLUDE:{exclude_file} 2>&1 >> "%LOG_FILE%"',
+                        f'if %ERRORLEVEL% neq 0 echo ERROR: xcopy failed with code %ERRORLEVEL% >> "%LOG_FILE%"',
+                        f'rmdir /S /Q "{temp_update_dir}" 2>&1 >> "%LOG_FILE%"',
+                        f'del "{zip_path}" 2>&1 >> "%LOG_FILE%"',
+                        f'echo Relaunching from: {current_exe} >> "%LOG_FILE%"',
                         f'start "" "{current_exe}"',
+                        f'echo Update completed at %date% %time% >> "%LOG_FILE%"',
                         'del "%~f0"',
                         ''
                     ]
