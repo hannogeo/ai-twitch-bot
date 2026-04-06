@@ -32,7 +32,7 @@ jobs:
         
     - name: Zip the Output
       run: |
-        Compress-Archive -Path dist\AIChatbot\* -DestinationPath dist\AIChatbot.zip
+        Compress-Archive -Path dist\AIChatbot -DestinationPath dist\AIChatbot.zip
         
     - name: Install Inno Setup
       run: choco install innosetup -y
