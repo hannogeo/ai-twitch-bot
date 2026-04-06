@@ -841,23 +841,28 @@ class ModernApp:
                     
                 exe_name = os.path.basename(current_exe)
                 exclude_file = os.path.join(source_dir, 'exclude.txt')
+                exclude_clause = f"/EXCLUDE:{exclude_file}" if os.path.exists(exclude_file) else ""
                 with open(bat_path, "w") as f:
-                    # Wait until the original process has exited, then copy files and relaunch
-                    f.write("@echo off\n"
-                            f"set EXE_NAME={exe_name}\n"
-                            "echo Waiting for application to exit...\n"
-                            ":waitloop\n"
-                            "tasklist /FI \"IMAGENAME eq %EXE_NAME%\" 2>NUL | find /I \"%EXE_NAME%\" >NUL\n"
-                            "if %ERRORLEVEL%==0 (\n"
-                            "  timeout /t 1 /nobreak >nul\n"
-                            "  goto waitloop\n"
-                            ")\n"
-                            "echo Copying update files...\n"
-                            f"xcopy \"{source_dir}\\*\" \"{BASE_DIR}\\\" /S /Y {('/EXCLUDE:' + exclude_file) if os.path.exists(os.path.join(source_dir, 'exclude.txt')) else ''} >nul 2>&1\n"
-                            f"rmdir /S /Q \"{temp_update_dir}\" >nul 2>&1\n"
-                            f"del \"{zip_path}\" >nul 2>&1\n"
-                            f"start \"\" \"{current_exe}\"\n"
-                            "del "%~f0"\n")
+                    # Build batch content as a list of lines to avoid tricky nested quoting
+                    bat_lines = [
+                        "@echo off",
+                        f"set EXE_NAME={exe_name}",
+                        "echo Waiting for application to exit...",
+                        ":waitloop",
+                        'tasklist /FI "IMAGENAME eq %EXE_NAME%" 2>NUL | find /I "%EXE_NAME%" >NUL',
+                        'if %ERRORLEVEL%==0 (',
+                        '  timeout /t 1 /nobreak >nul',
+                        '  goto waitloop',
+                        ')',
+                        'echo Copying update files...',
+                        f'xcopy "{source_dir}\\*" "{BASE_DIR}\\" /S /Y {exclude_clause} >nul 2>&1',
+                        f'rmdir /S /Q "{temp_update_dir}" >nul 2>&1',
+                        f'del "{zip_path}" >nul 2>&1',
+                        f'start "" "{current_exe}"',
+                        'del "%~f0"',
+                        ''
+                    ]
+                    f.write("\n".join(bat_lines))
                 
                 subprocess.Popen(bat_path, shell=True)
                 self.root.after(0, self.on_closing)
