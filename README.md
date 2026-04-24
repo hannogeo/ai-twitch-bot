@@ -1,7 +1,5 @@
 # AI Chatbot
 
-**ARCHIVED - This repository is no longer actively maintained. Feel free to fork it if you'd like to continue development.**
-
 <p>This is a Twitch bot that you can use to add AI chatbot functionality to your stream's chat!</p>
 
 ## Setup
