@@ -23,7 +23,6 @@ import requests
 import subprocess
 import webbrowser
 
-# Attempt to import DuckDuckGo Search
 try:
     from ddgs import DDGS
 except ImportError:
