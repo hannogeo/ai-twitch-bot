@@ -6,6 +6,7 @@ Designed for high stability and visual excellence using pure Tkinter.
 """
 
 import socket
+import ssl
 import sys
 import threading
 import time
@@ -13,6 +14,7 @@ import json
 import os
 import datetime
 import re
+import collections
 import tkinter as tk
 from tkinter import messagebox
 import customtkinter as ctk
@@ -26,6 +28,34 @@ try:
     from ddgs import DDGS
 except ImportError:
     DDGS = None
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Helpers: Semver & Rate Limiter
+# ──────────────────────────────────────────────────────────────────────────────
+
+def parse_semver(version: str):
+    parts = version.strip().lstrip("v").split(".")
+    major = int(parts[0]) if len(parts) > 0 and parts[0].isdigit() else 0
+    minor = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+    patch = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+    return (major, minor, patch)
+
+class RateLimiter:
+    def __init__(self, max_calls: int, period: float):
+        self.max_calls = max_calls
+        self.period = period
+        self.timestamps = collections.deque()
+
+    def acquire(self) -> float:
+        now = time.monotonic()
+        while self.timestamps and now - self.timestamps[0] > self.period:
+            self.timestamps.popleft()
+        if len(self.timestamps) < self.max_calls:
+            self.timestamps.append(now)
+            return 0.0
+        wait = self.period - (now - self.timestamps[0])
+        self.timestamps.append(now + wait)
+        return wait
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Global Configuration & Paths
@@ -211,10 +241,12 @@ class IRCBot:
         self.sock = None
         self.stop_event = threading.Event()
         self.config = self.load_config()
+        self.rate_limiter = RateLimiter(19, 30)
+        self.last_channel_send = 0.0
 
     def load_config(self):
         default = {
-            "NICK": "", "TOKEN": "", "CHANNEL": "",
+            "NICK": "", "TOKEN": "", "CHANNEL": "", "CLIENT_ID": "",
             "CONNECT_MSG_ENABLED": True, "CONNECT_MSG": "/me is now connected...",
             "DISCONNECT_MSG_ENABLED": True, "DISCONNECT_MSG": "/me disconnected!",
             "TRIGGER_TAG": True, "TRIGGER_CMD": True, "TRIGGER_REP": True,
@@ -233,6 +265,34 @@ class IRCBot:
             with open(BOT_CONFIG_FILE, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=4)
         except Exception as e: print(f"Save error: {e}")
+
+    def _normalize_token(self, token: str) -> str:
+        token = token.strip()
+        if not token.startswith("oauth:"):
+            return "oauth:" + token
+        return token
+
+    def _send(self, data: str, log_callback=None):
+        if not self.sock:
+            return False
+        try:
+            self.sock.send(data.encode("utf-8"))
+            return True
+        except Exception as e:
+            if log_callback:
+                log_callback(f"Send error: {e}", "#F7768E")
+            return False
+
+    def _rate_limited_send(self, msg: str, log_callback=None):
+        wait = self.rate_limiter.acquire()
+        if wait > 0:
+            time.sleep(wait)
+        now = time.monotonic()
+        since_last = now - self.last_channel_send
+        if since_last < 1.1:
+            time.sleep(1.1 - since_last)
+        self.last_channel_send = time.monotonic()
+        return self._send(msg, log_callback)
 
     def parse_message(self, raw: str):
         tags = {}
@@ -259,16 +319,23 @@ class IRCBot:
 
         self.stop_event.clear()
         try:
-            self.sock = socket.socket()
-            self.sock.connect(("irc.chat.twitch.tv", 6667))
-            self.sock.send(f"PASS {self.config['TOKEN']}\r\n".encode("utf-8"))
-            self.sock.send(f"NICK {self.config['NICK']}\r\n".encode("utf-8"))
-            self.sock.send("CAP REQ :twitch.tv/tags twitch.tv/commands twitch.tv/membership\r\n".encode("utf-8"))
-            self.sock.send(f"JOIN #{self.config['CHANNEL']}\r\n".encode("utf-8"))
+            raw_sock = socket.socket()
+            raw_sock.settimeout(15.0)
+            raw_sock.connect(("irc.chat.twitch.tv", 6697))
+            context = ssl.create_default_context()
+            self.sock = context.wrap_socket(raw_sock, server_hostname="irc.chat.twitch.tv")
+            self.sock.settimeout(2.0)
 
-            log_callback(f"Connected to #{self.config['CHANNEL']}", "#9ECE6A")
+            token = self._normalize_token(self.config['TOKEN'])
+            nick = self.config['NICK'].lower().strip()
+            self._send(f"PASS {token}\r\n")
+            self._send(f"NICK {nick}\r\n")
+            self._send("CAP REQ :twitch.tv/tags twitch.tv/commands twitch.tv/membership\r\n")
+            self._send(f"JOIN #{self.config['CHANNEL']}\r\n")
+
+            log_callback(f"Connected to #{self.config['CHANNEL']} (TLS)", "#9ECE6A")
             if self.config.get("CONNECT_MSG_ENABLED"):
-                self.sock.send(f"PRIVMSG #{self.config['CHANNEL']} :{self.config['CONNECT_MSG']}\r\n".encode("utf-8"))
+                self._rate_limited_send(f"PRIVMSG #{self.config['CHANNEL']} :{self.config['CONNECT_MSG']}\r\n", log_callback)
 
             self.sock.settimeout(2.0)
             while not self.stop_event.is_set():
@@ -281,7 +348,15 @@ class IRCBot:
                 for line in resp.split("\r\n"):
                     if not line: continue
                     if line.startswith("PING"):
-                        self.sock.send("PONG :tmi.twitch.tv\r\n".encode("utf-8"))
+                        self._send("PONG :tmi.twitch.tv\r\n")
+                        continue
+
+                    if "PRIVMSG" not in line and "NOTICE" in line:
+                        try:
+                            notice_msg = line.split(" :", 1)[1] if " :" in line else line
+                            if "msg_ratelimit" in line or "msg_slowmode" in line:
+                                log_callback(f"Rate limit notice: {notice_msg}", "#F7768E")
+                        except: pass
                         continue
 
                     user, chan, msg, tags = self.parse_message(line)
@@ -341,17 +416,16 @@ class IRCBot:
                         if response:
                             msg_id = tags.get("id")
                             if msg_id:
-                                self.sock.send(f"@reply-parent-msg-id={msg_id} PRIVMSG #{self.config['CHANNEL']} :{response}\r\n".encode("utf-8"))
+                                self._rate_limited_send(f"@reply-parent-msg-id={msg_id} PRIVMSG #{self.config['CHANNEL']} :{response}\r\n", log_callback)
                             else:
-                                self.sock.send(f"PRIVMSG #{self.config['CHANNEL']} :@{user} {response}\r\n".encode("utf-8"))
+                                self._rate_limited_send(f"PRIVMSG #{self.config['CHANNEL']} :@{user} {response}\r\n", log_callback)
                             log_callback(f"BOT -> {user}: {response}", "#7AA2F7")
 
         except Exception as e:
             log_callback(f"Connection Error: {e}", "#F7768E")
         finally:
             if self.config.get("DISCONNECT_MSG_ENABLED") and self.sock:
-                try: self.sock.send(f"PRIVMSG #{self.config['CHANNEL']} :{self.config['DISCONNECT_MSG']}\r\n".encode("utf-8"))
-                except: pass
+                self._send(f"PRIVMSG #{self.config['CHANNEL']} :{self.config['DISCONNECT_MSG']}\r\n")
             if self.sock: self.sock.close()
             self.sock = None
             log_callback("Disconnected.", "#F7768E")
@@ -511,13 +585,22 @@ class ModernApp:
             return e
 
         self.e_nick = create_entry(f, "Bot Username", self.bot.config.get("NICK", ""), "The exact Twitch account name of your bot.")
-        self.e_token = create_entry(f, "OAuth Token", self.bot.config.get("TOKEN", ""), "", show="*")
-        _token_row = ctk.CTkFrame(f, fg_color="transparent")
-        _token_row.pack(anchor="w", pady=(0, 10))
-        ctk.CTkLabel(_token_row, text="Your private access token. Get it at ", text_color="gray", font=ctk.CTkFont(size=11)).pack(side="left")
-        ctk.CTkButton(_token_row, text="twitchtokengenerator.com", font=ctk.CTkFont(size=11, underline=True), fg_color="transparent", text_color="#3B8ED0", hover_color=("gray85", "gray20"), height=18, width=0, command=lambda: webbrowser.open("https://twitchtokengenerator.com")).pack(side="left")
         self.e_chan = create_entry(f, "Target Channel", self.bot.config.get("CHANNEL", ""), "The channel where you want the bot to chat.")
-        
+
+        ctk.CTkLabel(f, text="Twitch App Client ID", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", pady=(10, 2))
+        cid_f = ctk.CTkFrame(f, fg_color="transparent")
+        cid_f.pack(fill="x")
+        self.e_client_id = ctk.CTkEntry(cid_f, font=ctk.CTkFont(size=14), height=40, corner_radius=8)
+        self.e_client_id.pack(side="left", fill="x", expand=True, pady=(0, 2))
+        self.e_client_id.insert(0, self.bot.config.get("CLIENT_ID", ""))
+        btn_login = ctk.CTkButton(cid_f, text="🔑 Login with Twitch", font=ctk.CTkFont(weight="bold", size=13), fg_color="#9147FF", hover_color="#772CE8", height=40, width=160, command=self.twitch_login)
+        btn_login.pack(side="right", padx=(10, 0), pady=(0, 2))
+        _cid_row = ctk.CTkFrame(f, fg_color="transparent")
+        _cid_row.pack(anchor="w", pady=(0, 10))
+        ctk.CTkLabel(_cid_row, text="Required for in-app login. Register an app at ", text_color="gray", font=ctk.CTkFont(size=11)).pack(side="left")
+        ctk.CTkButton(_cid_row, text="dev.twitch.tv/console/apps", font=ctk.CTkFont(size=11, underline=True), fg_color="transparent", text_color="#3B8ED0", hover_color=("gray85", "gray20"), height=18, width=0, command=lambda: webbrowser.open("https://dev.twitch.tv/console/apps")).pack(side="left")
+        ctk.CTkLabel(_cid_row, text=", then paste the Client ID here.", text_color="gray", font=ctk.CTkFont(size=11)).pack(side="left")
+
         # Connection Message Toggles
         self.sw_conn = ctk.CTkSwitch(f, text="Send Connect Message", font=ctk.CTkFont(size=14))
         self.sw_conn.pack(anchor="w", pady=(15, 0))
@@ -750,7 +833,6 @@ class ModernApp:
     def save_bot_config(self):
         data = self.bot.config
         data["NICK"] = self.e_nick.get().strip()
-        data["TOKEN"] = self.e_token.get().strip()
         data["CHANNEL"] = self.e_chan.get().strip().replace("#", "").lower()
         data["CONNECT_MSG_ENABLED"] = bool(self.sw_conn.get())
         data["DISCONNECT_MSG_ENABLED"] = bool(self.sw_disc.get())
@@ -764,9 +846,99 @@ class ModernApp:
         data["TRIGGER_REP"] = bool(self.sw_rep.get())
         data["TRIGGER_OTHER_REP"] = bool(self.sw_other_rep.get())
         data["COMMANDS"] = self.e_cmds.get().strip()
+        data["CLIENT_ID"] = self.e_client_id.get().strip()
         
         self.bot.save_config(data)
         messagebox.showinfo("Success", "Bot settings saved!")
+
+    def twitch_login(self):
+        client_id = self.e_client_id.get().strip()
+        if not client_id:
+            messagebox.showerror("Error", "Enter your Twitch App Client ID first (see field above).")
+            return
+
+        dialog = ctk.CTkToplevel(self.root)
+        dialog.title("Twitch Login")
+        dialog.geometry("480x260")
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        ctk.CTkLabel(dialog, text="Twitch Device Authorization", font=ctk.CTkFont(size=16, weight="bold")).pack(pady=(20, 5))
+        ctk.CTkLabel(dialog, text="A code will appear below. Click the button to open Twitch's activation\npage, sign in with your bot account, and enter the code.", justify="left").pack(padx=20)
+
+        try:
+            resp = requests.post("https://id.twitch.tv/oauth2/device", data={
+                "client_id": client_id, "scopes": "chat:read chat:write"
+            })
+            data = resp.json()
+            if resp.status_code != 200:
+                messagebox.showerror("Error", data.get("message", str(data)))
+                dialog.destroy()
+                return
+
+            device_code = data["device_code"]
+            user_code = data["user_code"]
+            interval = data.get("interval", 5)
+
+            code_frame = ctk.CTkFrame(dialog, fg_color="#18181A", corner_radius=8)
+            code_frame.pack(pady=10, ipadx=20, ipady=10)
+            ctk.CTkLabel(code_frame, text=user_code, font=ctk.CTkFont(size=32, weight="bold"), text_color="#9147FF").pack()
+
+            btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+            btn_frame.pack(pady=5)
+            ctk.CTkButton(btn_frame, text="🌐 Open twitch.tv/activate", font=ctk.CTkFont(weight="bold"), fg_color="#9147FF", hover_color="#772CE8", command=lambda: webbrowser.open("https://www.twitch.tv/activate")).pack(side="left", padx=5)
+            ctk.CTkButton(btn_frame, text="Cancel", fg_color="#565F89", hover_color="#343A59", command=dialog.destroy).pack(side="left", padx=5)
+
+            status_label = ctk.CTkLabel(dialog, text="⏳ Waiting for you to authorize...", text_color="gray")
+            status_label.pack(pady=(5, 15))
+
+            def poll():
+                import time as _t
+                nonlocal interval
+                while True:
+                    _t.sleep(interval)
+                    try:
+                        pr = requests.post("https://id.twitch.tv/oauth2/token", data={
+                            "client_id": client_id,
+                            "scopes": "chat:read chat:write",
+                            "device_code": device_code,
+                            "grant_type": "urn:ietf:params:oauth:grant-type:device_code"
+                        })
+                        if pr.status_code == 200:
+                            j = pr.json()
+                            tok = j["access_token"]
+                            rt = j.get("refresh_token", "")
+                            self.root.after(0, lambda t=tok, r=rt: self._on_twitch_login_success(dialog, t, r))
+                            return
+                        err = pr.json().get("error", "")
+                        if err == "authorization_pending":
+                            continue
+                        if err == "slow_down":
+                            interval += 1
+                            continue
+                        if err == "expired_token":
+                            self.root.after(0, lambda: status_label.configure(text="✗ Code expired. Close and try again.", text_color="#F7768E"))
+                            return
+                        self.root.after(0, lambda e=err: status_label.configure(text=f"✗ {e}", text_color="#F7768E"))
+                        return
+                    except Exception as e:
+                        self.root.after(0, lambda: status_label.configure(text=f"✗ {str(e)[:30]}", text_color="#F7768E"))
+                        return
+
+            threading.Thread(target=poll, daemon=True).start()
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to start login: {str(e)[:60]}")
+            dialog.destroy()
+
+    def _on_twitch_login_success(self, dialog, token, refresh_token=""):
+        dialog.destroy()
+        self.bot.config["TOKEN"] = token
+        if refresh_token:
+            self.bot.config["REFRESH_TOKEN"] = refresh_token
+        self.bot.save_config(self.bot.config)
+        self.log("Twitch token obtained and saved.", "#9ECE6A")
+        messagebox.showinfo("Success", "Logged in to Twitch! The token has been saved automatically.")
 
     def save_ai_config(self):
         key = self.e_ai_key.get().strip()
@@ -788,9 +960,8 @@ class ModernApp:
             resp = requests.get(f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest", timeout=5)
             if resp.status_code == 200:
                 data = resp.json()
-                latest = data.get("tag_name", "").lstrip("v")
-                current = VERSION.lstrip("v")
-                if latest > current:
+                latest_tag = data.get("tag_name", "")
+                if parse_semver(latest_tag) > parse_semver(VERSION):
                     assets = data.get("assets", [])
                     # Find the .zip file specifically, not the installer
                     zip_asset = next((a for a in assets if a["name"].endswith(".zip")), None)

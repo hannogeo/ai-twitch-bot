@@ -2,6 +2,7 @@
     "NICK": "",
     "TOKEN": "",
     "CHANNEL": "",
+    "CLIENT_ID": "",
     "CONNECT_MSG_ENABLED": true,
     "CONNECT_MSG": "/me is now connected...",
     "DISCONNECT_MSG_ENABLED": true,
@@ -9,10 +10,6 @@
     "TRIGGER_TAG": true,
     "TRIGGER_CMD": true,
     "TRIGGER_REP": true,
-    "COMMANDS": "!ai, !aichat",
-    "server": "irc.chat.twitch.tv",
-    "port": 6667,
-    "nickname": "",
-    "token": "",
-    "channel": ""
+    "TRIGGER_OTHER_REP": true,
+    "COMMANDS": "!ai, !aichat"
 }
