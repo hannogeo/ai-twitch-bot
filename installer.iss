@@ -1,9 +1,9 @@
-; Inno Setup Script for AI Chatbot
-#define MyAppName "AI Chatbot"
-#define MyAppVersion "1.2.0"
+; Inno Setup Script for AI Twitch Bot
+#define MyAppName "AI Twitch Bot"
+#define MyAppVersion "1.3.0"
 #define MyAppPublisher "hannogeo"
 #define MyAppURL "https://github.com/hannogeo/ai-twitch-bot"
-#define MyAppExeName "AIChatbot.exe"
+#define MyAppExeName "AITwitchBot.exe"
 
 [Setup]
 AppId={{6E5F5F5F-5F5F-5F5F-5F5F-5F5F5F5F5F5F}
@@ -17,13 +17,14 @@ DefaultDirName={localappdata}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 OutputDir=dist
-OutputBaseFilename=AIChatbot-Setup
+OutputBaseFilename=AITwitchBot-Setup
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=lowest
 ChangesAssociations=no
 SetupIconFile=app_icon.ico
+UninstallDisplayIcon={app}\app_icon.ico
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -32,8 +33,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "dist\AIChatbot\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "dist\AIChatbot\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dist\AITwitchBot\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\AITwitchBot\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "version.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "app_icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "bot_config.json"; DestDir: "{app}"; Flags: ignoreversion onlyifdoesntexist
@@ -46,7 +47,3 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
-
-[InstallDelete]
-Type: files; Name: "{app}\*.pyc"
-Type: files; Name: "{app}\*.pyd"

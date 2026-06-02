@@ -1,1077 +1,484 @@
-"""
-AI Chatbot
-================================
-A modern, all-in-one Twitch chatbot powered by Groq LLM.
-Designed for high stability and visual excellence using pure Tkinter.
-"""
-
-import socket
-import ssl
+import datetime
+import os
+import platform
+import subprocess
 import sys
 import threading
-import time
-import json
-import os
-import datetime
-import re
-import collections
-import tkinter as tk
-from tkinter import messagebox
-import customtkinter as ctk
-from groq import Groq
-import requests
-import subprocess
 import webbrowser
 
-try:
-    from ddgs import DDGS
-except ImportError:
-    DDGS = None
+import flet as ft
+import requests
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Helpers: Semver & Rate Limiter
-# ──────────────────────────────────────────────────────────────────────────────
+from ai_module import AIModule
+from bot import IRCBot
+from config import BASE_DIR, AIConfig, BotConfig
+from updater import (GITHUB_REPO, check_for_update, download_update,
+                     get_local_version, parse_semver)
 
-def parse_semver(version: str):
-    parts = version.strip().lstrip("v").split(".")
-    major = int(parts[0]) if len(parts) > 0 and parts[0].isdigit() else 0
-    minor = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
-    patch = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
-    return (major, minor, patch)
+VERSION = get_local_version()
 
-class RateLimiter:
-    def __init__(self, max_calls: int, period: float):
-        self.max_calls = max_calls
-        self.period = period
-        self.timestamps = collections.deque()
 
-    def acquire(self) -> float:
-        now = time.monotonic()
-        while self.timestamps and now - self.timestamps[0] > self.period:
-            self.timestamps.popleft()
-        if len(self.timestamps) < self.max_calls:
-            self.timestamps.append(now)
-            return 0.0
-        wait = self.period - (now - self.timestamps[0])
-        self.timestamps.append(now + wait)
-        return wait
+def main(page: ft.Page):
+    page.title = "AI Twitch Bot"
+    page.theme_mode = ft.ThemeMode.DARK
+    page.window.width = 820
+    page.window.height = 640
+    page.window.min_width = 600
+    page.window.min_height = 450
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Global Configuration & Paths
-# ──────────────────────────────────────────────────────────────────────────────
+    bot_config = BotConfig()
+    ai_config = AIConfig()
+    ai_module = AIModule(ai_config)
 
-GITHUB_REPO = "hannogeo/ai-twitch-bot"
+    bot_thread = None
+    bot_instance = None
+    running = False
 
-def _load_version() -> str:
-    """Read version from version.json, falling back to 'unknown' if missing."""
-    # Resolve path relative to the executable (frozen) or this script file
-    _base = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
-    _path = os.path.join(_base, "version.json")
-    try:
-        with open(_path, "r", encoding="utf-8") as _f:
-            return json.load(_f).get("version", "unknown")
-    except Exception:
-        return "unknown"
+    log_lines = []
 
-VERSION = _load_version()
-
-if getattr(sys, 'frozen', False):
-    # This ensures bot_config and ai_config save securely NEXT to the App Folder 
-    # and survive all updates, completely avoiding compiler temp destruction
-    BASE_DIR = os.path.dirname(sys.executable)
-else:
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-ICON_PATH = os.path.join(BASE_DIR, "app_icon.ico")
-
-BOT_CONFIG_FILE = os.path.join(BASE_DIR, "bot_config.json")
-AI_CONFIG_FILE = os.path.join(BASE_DIR, "ai_config.json")
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Logic: Search Tool
-# ──────────────────────────────────────────────────────────────────────────────
-
-def perform_search(query: str, max_results: int = 4) -> str:
-    if DDGS is None:
-        return "DuckDuckGo search not available. Please install 'duckduckgo-search'."
-    try:
-        with DDGS() as ddgs:
-            results = ddgs.text(query, max_results=max_results)
-            if not results: return "No search results found."
-            summary = []
-            for r in results:
-                summary.append(f"Result: {r.get('title', 'No Title')}\nContent: {r.get('body', 'No Content')}")
-            return "\n\n".join(summary)
-    except Exception as e:
-        return f"Search Error: {str(e)}"
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Logic: AI Chat Module
-# ──────────────────────────────────────────────────────────────────────────────
-
-class AIModule:
-    def __init__(self):
-        self.config = {}
-        self.groq_client = None
-        self.history = []
-        self.config_lock = threading.RLock()
-        self.history_lock = threading.RLock()
-        self.load_config()
-
-    def load_config(self):
-        with self.config_lock:
-            if os.path.exists(AI_CONFIG_FILE):
-                try:
-                    with open(AI_CONFIG_FILE, "r", encoding="utf-8") as f:
-                        self.config = json.load(f)
-                except:
-                    self.config = {}
-            else:
-                self.config = {
-                    "api_key": "",
-                    "enabled": True,
-                    "system_instruction": "You are a helpful AI Twitch bot.",
-                    "chatter_context": {}
-                }
-                self.save_config()
-
-            api_key = self.config.get("api_key", "").strip()
-            if api_key:
-                try:
-                    self.groq_client = Groq(api_key=api_key)
-                except:
-                    self.groq_client = None
-            else:
-                self.groq_client = None
-
-    def save_config(self):
-        with self.config_lock:
-            try:
-                with open(AI_CONFIG_FILE, "w", encoding="utf-8") as f:
-                    json.dump(self.config, f, indent=4)
-            except Exception as e:
-                print(f"Error saving AI config: {e}")
-
-    def update_config(self, api_key, system_instruction, enabled=True, chatter_context=None):
-        self.config["api_key"] = api_key
-        self.config["system_instruction"] = system_instruction
-        self.config["enabled"] = enabled
-        if chatter_context is not None:
-            self.config["chatter_context"] = chatter_context
-        self.save_config()
-        self.load_config()
-
-    def get_ai_response(self, prompt: str, speaker_name: str = None) -> str:
-        if not self.config.get("enabled", True): return None
-        if self.groq_client is None: return "Groq API key not set."
-        
-        try:
-            # Routing: Search or Casual?
-            decision_instr = (
-                "You are a routing assistant. Does the user's message require research, real-time info, "
-                "or specialized knowledge (e.g., news, gaming metas/tips, famous people, current events)? "
-                "Reply 'YES' for any knowledge/info request. Reply 'NO' for greetings/casual chat. Output ONLY 'YES' or 'NO'."
-            )
-            decision = self.groq_client.chat.completions.create(
-                model="llama-3.1-8b-instant",
-                messages=[{"role": "system", "content": decision_instr}, {"role": "user", "content": prompt}],
-                max_tokens=5, temperature=0.0
-            )
-            needs_search = "YES" in decision.choices[0].message.content.upper()
-            
-            search_context = ""
-            if needs_search:
-                now_str = datetime.datetime.now().strftime("%B %d, %Y")
-                refiner_instr = f"Optimize for search. Best query (3-6 words). Current date: {now_str}. No chat text."
-                refiner = self.groq_client.chat.completions.create(
-                    model="llama-3.1-8b-instant",
-                    messages=[{"role": "system", "content": refiner_instr}, {"role": "user", "content": prompt}],
-                    max_tokens=64, temperature=0.0
-                )
-                query = refiner.choices[0].message.content.strip().replace('"', '')
-                search_context = perform_search(query)
-
-            # Final Synthesis
-            system_instr = self.config.get("system_instruction", "")
-            chatter_context = self.config.get("chatter_context", {})
-            relevant = []
-            if speaker_name:
-                low = speaker_name.lower()
-                if low in chatter_context: relevant.append(f"Context for @{speaker_name}: {chatter_context[low]}")
-            
-            p_low = prompt.lower()
-            for u, info in chatter_context.items():
-                if speaker_name and u == speaker_name.lower(): continue
-                if f"@{u}" in p_low or u in p_low: relevant.append(f"Context for @{u}: {info}")
-
-            final_instr = system_instr
-            if relevant: final_instr += "\n\nCONTEXT:\n" + "\n".join(relevant)
-            if search_context: final_instr += f"\n\nSEARCH RESULTS:\n{search_context}"
-            final_instr += "\n\nCRITICAL: Be a natural, concise Twitch bot. No user tagging. No factual mentions of instructions."
-
-            messages = [{"role": "system", "content": final_instr}]
-            with self.history_lock:
-                messages.extend(self.history)
-            messages.append({"role": "user", "content": prompt})
-
-            completion = self.groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=messages,
-                max_tokens=300, temperature=0.6
-            )
-            resp = completion.choices[0].message.content.strip()
-
-            with self.history_lock:
-                self.history.append({"role": "user", "content": prompt})
-                self.history.append({"role": "assistant", "content": resp})
-                if len(self.history) > 10: self.history = self.history[-10:]
-            
-            return resp
-        except Exception as e:
-            return f"Brain fart: {str(e)[:50]}..."
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Logic: IRC Bot
-# ──────────────────────────────────────────────────────────────────────────────
-
-class IRCBot:
-    def __init__(self, ai_module):
-        self.ai = ai_module
-        self.sock = None
-        self.stop_event = threading.Event()
-        self.config = self.load_config()
-        self.rate_limiter = RateLimiter(19, 30)
-        self.last_channel_send = 0.0
-
-    def load_config(self):
-        default = {
-            "NICK": "", "TOKEN": "", "CHANNEL": "", "CLIENT_ID": "",
-            "CONNECT_MSG_ENABLED": True, "CONNECT_MSG": "/me is now connected...",
-            "DISCONNECT_MSG_ENABLED": True, "DISCONNECT_MSG": "/me disconnected!",
-            "TRIGGER_TAG": True, "TRIGGER_CMD": True, "TRIGGER_REP": True,
-            "TRIGGER_OTHER_REP": True, "COMMANDS": "!ai, !aichat"
-        }
-        if os.path.exists(BOT_CONFIG_FILE):
-            try:
-                with open(BOT_CONFIG_FILE, "r", encoding="utf-8") as f:
-                    return {**default, **json.load(f)}
-            except: return default
-        return default
-
-    def save_config(self, data):
-        self.config = data
-        try:
-            with open(BOT_CONFIG_FILE, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=4)
-        except Exception as e: print(f"Save error: {e}")
-
-    def _normalize_token(self, token: str) -> str:
-        token = token.strip()
-        if not token.startswith("oauth:"):
-            return "oauth:" + token
-        return token
-
-    def _send(self, data: str, log_callback=None):
-        if not self.sock:
-            return False
-        try:
-            self.sock.send(data.encode("utf-8"))
-            return True
-        except Exception as e:
-            if log_callback:
-                log_callback(f"Send error: {e}", "#F7768E")
-            return False
-
-    def _rate_limited_send(self, msg: str, log_callback=None):
-        wait = self.rate_limiter.acquire()
-        if wait > 0:
-            time.sleep(wait)
-        now = time.monotonic()
-        since_last = now - self.last_channel_send
-        if since_last < 1.1:
-            time.sleep(1.1 - since_last)
-        self.last_channel_send = time.monotonic()
-        return self._send(msg, log_callback)
-
-    def parse_message(self, raw: str):
-        tags = {}
-        if raw.startswith("@"):
-            try:
-                tags_str, raw = raw[1:].split(" ", 1)
-                for part in tags_str.split(";"):
-                    if "=" in part:
-                        k, v = part.split("=", 1)
-                        tags[k] = v
-            except: pass
-        if "PRIVMSG" not in raw: return None, None, None, None
-        try:
-            prefix, trailing = raw.split(" PRIVMSG ", 1)
-            user = prefix[prefix.rfind(':')+1:].split('!',1)[0]
-            channel_part, message_part = trailing.split(" :", 1)
-            return user, channel_part.split(" ", 1)[0], message_part.strip(), tags
-        except: return None, None, None, None
-
-    def run(self, log_callback):
-        if not all([self.config["TOKEN"], self.config["NICK"], self.config["CHANNEL"]]):
-            log_callback("Error: Missing credentials in Bot Config.", "#F7768E")
-            return
-
-        self.stop_event.clear()
-        try:
-            raw_sock = socket.socket()
-            raw_sock.settimeout(15.0)
-            raw_sock.connect(("irc.chat.twitch.tv", 6697))
-            context = ssl.create_default_context()
-            self.sock = context.wrap_socket(raw_sock, server_hostname="irc.chat.twitch.tv")
-            self.sock.settimeout(2.0)
-
-            token = self._normalize_token(self.config['TOKEN'])
-            nick = self.config['NICK'].lower().strip()
-            self._send(f"PASS {token}\r\n")
-            self._send(f"NICK {nick}\r\n")
-            self._send("CAP REQ :twitch.tv/tags twitch.tv/commands twitch.tv/membership\r\n")
-            self._send(f"JOIN #{self.config['CHANNEL']}\r\n")
-
-            log_callback(f"Connected to #{self.config['CHANNEL']} (TLS)", "#9ECE6A")
-            if self.config.get("CONNECT_MSG_ENABLED"):
-                self._rate_limited_send(f"PRIVMSG #{self.config['CHANNEL']} :{self.config['CONNECT_MSG']}\r\n", log_callback)
-
-            self.sock.settimeout(2.0)
-            while not self.stop_event.is_set():
-                try:
-                    resp = self.sock.recv(2048).decode("utf-8", errors="ignore")
-                except socket.timeout: continue
-                except: break
-                
-                if not resp: break
-                for line in resp.split("\r\n"):
-                    if not line: continue
-                    if line.startswith("PING"):
-                        self._send("PONG :tmi.twitch.tv\r\n")
-                        continue
-
-                    if "PRIVMSG" not in line and "NOTICE" in line:
-                        try:
-                            notice_msg = line.split(" :", 1)[1] if " :" in line else line
-                            if "msg_ratelimit" in line or "msg_slowmode" in line:
-                                log_callback(f"Rate limit notice: {notice_msg}", "#F7768E")
-                        except: pass
-                        continue
-
-                    user, chan, msg, tags = self.parse_message(line)
-                    if not user or not msg: continue
-                    log_callback(f"{user}: {msg}")
-
-                    msg_l = msg.lower()
-                    nick_l = self.config['NICK'].lower()
-                    parent_user = tags.get("reply-parent-user-login")
-                    
-                    t_tag = self.config.get("TRIGGER_TAG", True)
-                    t_cmd = self.config.get("TRIGGER_CMD", True)
-                    t_rep = self.config.get("TRIGGER_REP", True)
-                    t_other_rep = self.config.get("TRIGGER_OTHER_REP", True)
-                    
-                    raw_cmds = self.config.get("COMMANDS", "!ai, !aichat")
-                    cmds = sorted([c.strip().lower() for c in raw_cmds.split(",") if c.strip()], key=len, reverse=True)
-
-                    is_tag = t_tag and f"@{nick_l}" in msg_l
-                    is_rep = t_rep and parent_user and parent_user.lower() == nick_l
-                    
-                    is_cmd = False
-                    matched_cmd = None
-                    if t_cmd:
-                        for c in cmds:
-                            if not c: continue
-                            if msg_l.startswith(c + " ") or msg_l == c:
-                                is_cmd = True
-                                matched_cmd = c
-                                break
-
-                    # Block tag/reply triggers if it's a reply to someone else and that toggle is OFF
-                    # But commands should ALWAYS work in replies
-                    if parent_user and parent_user.lower() != nick_l and not t_other_rep:
-                        can_trigger = is_cmd
-                    else:
-                        can_trigger = is_tag or is_cmd or is_rep
-
-                    if can_trigger:
-                        prompt = msg.strip()
-                        if matched_cmd:
-                            if msg_l.startswith(matched_cmd + " "):
-                                prompt = msg[len(matched_cmd):].strip()
-                            else:
-                                prompt = ""
-                        elif is_tag:
-                            prompt = re.sub(rf"@{re.escape(nick_l)}", "", msg, flags=re.IGNORECASE).strip()
-                        
-                        if not prompt: prompt = "Say hi!"
-                        
-                        final_prompt = prompt
-                        if parent_user:
-                            parent_msg = tags.get("reply-parent-msg-body", "").replace("\\s", " ")
-                            final_prompt = f"[Replying to @{parent_user}: \"{parent_msg}\"]\n\n{prompt}"
-
-                        response = self.ai.get_ai_response(final_prompt, user)
-                        if response:
-                            msg_id = tags.get("id")
-                            if msg_id:
-                                self._rate_limited_send(f"@reply-parent-msg-id={msg_id} PRIVMSG #{self.config['CHANNEL']} :{response}\r\n", log_callback)
-                            else:
-                                self._rate_limited_send(f"PRIVMSG #{self.config['CHANNEL']} :@{user} {response}\r\n", log_callback)
-                            log_callback(f"BOT -> {user}: {response}", "#7AA2F7")
-
-        except Exception as e:
-            log_callback(f"Connection Error: {e}", "#F7768E")
-        finally:
-            if self.config.get("DISCONNECT_MSG_ENABLED") and self.sock:
-                self._send(f"PRIVMSG #{self.config['CHANNEL']} :{self.config['DISCONNECT_MSG']}\r\n")
-            if self.sock: self.sock.close()
-            self.sock = None
-            log_callback("Disconnected.", "#F7768E")
-
-# ──────────────────────────────────────────────────────────────────────────────
-# GUI: Modern Dashboard (CustomTkinter)
-# ──────────────────────────────────────────────────────────────────────────────
-
-class ModernApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("AI Chatbot - Dashboard")
-        self.root.geometry("950x650")
-        ctk.set_appearance_mode("dark")
-        ctk.set_default_color_theme("blue")
-
-        self.ai = AIModule()
-        self.bot = IRCBot(self.ai)
-        self.is_running = False
-
-        self.setup_ui()
-        self.show_page("dashboard")
-
-        # Auto-start bot on launch
-        self.root.after(500, self.start_bot)
-
-        # Check for updates in background
-        threading.Thread(target=self.check_for_updates, daemon=True).start()
-
-        # Graceful shutdown hook
-        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
-
-    def setup_ui(self):
-        # Sidebar
-        self.sidebar = ctk.CTkFrame(self.root, width=240, corner_radius=0)
-        self.sidebar.pack(side="left", fill="y")
-        self.sidebar.pack_propagate(False)
-
-        ctk.CTkLabel(self.sidebar, text="AI Chatbot", font=ctk.CTkFont(size=22, weight="bold"), text_color="#3B8ED0").pack(pady=30)
-        
-        self.nav_btns = {}
-        for name, page in [("Dashboard", "dashboard"), ("Bot Config", "config"), ("AI Brain", "ai")]:
-            btn = ctk.CTkButton(self.sidebar, text=name, command=lambda p=page: self.show_page(p), 
-                                fg_color="transparent", text_color=("gray10", "gray90"), hover_color=("gray70", "gray30"), 
-                                anchor="w", font=ctk.CTkFont(size=14))
-            btn.pack(fill="x", padx=15, pady=5)
-            self.nav_btns[page] = btn
-            
-        # Add credits block to the bottom of the sidebar
-        credits_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        credits_frame.pack(side="bottom", fill="x", pady=20)
-        ctk.CTkLabel(credits_frame, text=" Made with ♥ by HannoGeo ", font=ctk.CTkFont(size=11, slant="italic"), text_color="gray", width=200).pack()
-        ctk.CTkLabel(credits_frame, text=f"v{VERSION}", font=ctk.CTkFont(size=11), text_color="#3B8ED0").pack()
-
-        # Main Area
-        self.container = ctk.CTkFrame(self.root, fg_color="transparent")
-        self.container.pack(side="right", fill="both", expand=True)
-
-        # Dashboard Page
-        self.p_dashboard = ctk.CTkFrame(self.container, fg_color="transparent")
-        self.build_dashboard()
-
-        # Config Page
-        self.p_config = ctk.CTkScrollableFrame(self.container, fg_color="transparent")
-        self._set_fast_scroll(self.p_config)
-        self.build_config()
-
-        # AI Page
-        self.p_ai = ctk.CTkScrollableFrame(self.container, fg_color="transparent")
-        self._set_fast_scroll(self.p_ai)
-        self.build_ai()
-
-    def _set_fast_scroll(self, scroll_frame):
-        try:
-            # By modifying the internal Tkinter Canvas yscrollincrement, 
-            # we multiply the physical pixel distance of every "unit" that CustomTkinter asks to scroll.
-            scroll_frame._parent_canvas.configure(yscrollincrement="15")
-        except Exception as e:
-            print("Scroll speed fix error:", e)
-
-    def _isolate_scroll(self, child_widget, parent_scroll_frame):
-        def on_enter(e):
-            try: parent_scroll_frame._parent_canvas.unbind_all("<MouseWheel>")
-            except: pass
-        def on_leave(e):
-            try: parent_scroll_frame._parent_canvas.bind_all("<MouseWheel>", parent_scroll_frame._mouse_wheel_all)
-            except: pass
-        
-        child_widget.bind("<Enter>", on_enter)
-        child_widget.bind("<Leave>", on_leave)
-
-    def _auto_resize_textbox(self, t_widget):
-        def do_resize(event=None):
-            try:
-                text = t_widget.get("1.0", "end-1c")
-                total_lines = sum(max(1, len(line) // 60 + 1) for line in text.split('\n'))
-                h = max(60, min(total_lines * 22 + 10, 200))
-                t_widget.configure(height=h)
-            except: pass
-        t_widget.bind("<KeyRelease>", do_resize)
-        do_resize()
-
-    def build_dashboard(self):
-        header = ctk.CTkFrame(self.p_dashboard, fg_color="transparent")
-        header.pack(fill="x", padx=40, pady=(40, 10))
-
-        self.status_indicator = ctk.CTkLabel(header, text="● STOPPED", text_color="#F7768E", font=ctk.CTkFont(size=16, weight="bold"))
-        self.status_indicator.pack(side="left")
-
-        # Log Area
-        self.log_area = ctk.CTkTextbox(self.p_dashboard, font=ctk.CTkFont(family="Consolas", size=13), wrap="word", corner_radius=10, fg_color="#18181A")
-        self.log_area.pack(fill="both", expand=True, padx=40, pady=10)
-        self.log_area.configure(state="disabled")
-
-        # Controls
-        ctrl = ctk.CTkFrame(self.p_dashboard, fg_color="transparent")
-        ctrl.pack(fill="x", padx=40, pady=20)
-
-        self.btn_toggle = ctk.CTkButton(ctrl, text="▶ START BOT", fg_color="#9ECE6A", text_color="black", hover_color="#7BB04A", font=ctk.CTkFont(weight="bold"), command=self.toggle_bot)
-        self.btn_toggle.pack(side="left")
-
-    def build_config(self):
-        ctk.CTkLabel(self.p_config, text="BOT CREDENTIALS", font=ctk.CTkFont(size=28, weight="bold")).pack(anchor="w", padx=40, pady=(40, 5))
-        ctk.CTkLabel(self.p_config, text="Connection settings for Twitch IRC.", text_color="gray").pack(anchor="w", padx=40)
-
-        f = ctk.CTkFrame(self.p_config, fg_color="transparent")
-        f.pack(fill="x", padx=40, pady=20)
-
-        def create_entry(parent, label, default, explanation, show=""):
-            ctk.CTkLabel(parent, text=label, font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", pady=(10, 2))
-            
-            if show == "*":
-                sub_f = ctk.CTkFrame(parent, fg_color="transparent")
-                sub_f.pack(fill="x", pady=(0, 2))
-                
-                e = ctk.CTkEntry(sub_f, font=ctk.CTkFont(size=14), show="*", height=40, corner_radius=8)
-                e.pack(side="left", fill="x", expand=True)
-                
-                def toggle_show(entry=e, b_eye=None):
-                    if entry.cget("show") == "":
-                        entry.configure(show="*")
-                        b_eye.configure(text="👁")
-                    else:
-                        entry.configure(show="")
-                        b_eye.configure(text="🔒")
-                        
-                btn_eye = ctk.CTkButton(sub_f, text="👁", width=40, height=40, fg_color="#343638", hover_color="#3E4042", text_color="gray")
-                btn_eye.configure(command=lambda e=e, b=btn_eye: toggle_show(e, b))
-                btn_eye.pack(side="right", padx=(5, 0))
-            else:
-                e = ctk.CTkEntry(parent, font=ctk.CTkFont(size=14), show=show, height=40, corner_radius=8)
-                e.pack(fill="x", pady=(0, 2))
-                
-            if explanation:
-                ctk.CTkLabel(parent, text=explanation, text_color="gray", font=ctk.CTkFont(size=11)).pack(anchor="w", pady=(0, 10))
-            e.insert(0, default)
-            return e
-
-        self.e_nick = create_entry(f, "Bot Username", self.bot.config.get("NICK", ""), "The exact Twitch account name of your bot.")
-        self.e_chan = create_entry(f, "Target Channel", self.bot.config.get("CHANNEL", ""), "The channel where you want the bot to chat.")
-
-        ctk.CTkLabel(f, text="Twitch App Client ID", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", pady=(10, 2))
-        cid_f = ctk.CTkFrame(f, fg_color="transparent")
-        cid_f.pack(fill="x")
-        self.e_client_id = ctk.CTkEntry(cid_f, font=ctk.CTkFont(size=14), height=40, corner_radius=8)
-        self.e_client_id.pack(side="left", fill="x", expand=True, pady=(0, 2))
-        self.e_client_id.insert(0, self.bot.config.get("CLIENT_ID", ""))
-        btn_login = ctk.CTkButton(cid_f, text="🔑 Login with Twitch", font=ctk.CTkFont(weight="bold", size=13), fg_color="#9147FF", hover_color="#772CE8", height=40, width=160, command=self.twitch_login)
-        btn_login.pack(side="right", padx=(10, 0), pady=(0, 2))
-        _cid_row = ctk.CTkFrame(f, fg_color="transparent")
-        _cid_row.pack(anchor="w", pady=(0, 10))
-        ctk.CTkLabel(_cid_row, text="Required for in-app login. Register an app at ", text_color="gray", font=ctk.CTkFont(size=11)).pack(side="left")
-        ctk.CTkButton(_cid_row, text="dev.twitch.tv/console/apps", font=ctk.CTkFont(size=11, underline=True), fg_color="transparent", text_color="#3B8ED0", hover_color=("gray85", "gray20"), height=18, width=0, command=lambda: webbrowser.open("https://dev.twitch.tv/console/apps")).pack(side="left")
-        ctk.CTkLabel(_cid_row, text=", then paste the Client ID here.", text_color="gray", font=ctk.CTkFont(size=11)).pack(side="left")
-
-        # Connection Message Toggles
-        self.sw_conn = ctk.CTkSwitch(f, text="Send Connect Message", font=ctk.CTkFont(size=14))
-        self.sw_conn.pack(anchor="w", pady=(15, 0))
-        if self.bot.config.get("CONNECT_MSG_ENABLED", True): self.sw_conn.select()
-        ctk.CTkLabel(f, text="Greets the chat when the bot finishes connecting.", text_color="gray", font=ctk.CTkFont(size=11)).pack(anchor="w", padx=35, pady=(0, 5))
-        
-        self.sw_disc = ctk.CTkSwitch(f, text="Send Disconnect Message", font=ctk.CTkFont(size=14))
-        self.sw_disc.pack(anchor="w", pady=(5, 0))
-        if self.bot.config.get("DISCONNECT_MSG_ENABLED", True): self.sw_disc.select()
-        ctk.CTkLabel(f, text="Says goodbye when you manually stop the bot.", text_color="gray", font=ctk.CTkFont(size=11)).pack(anchor="w", padx=35, pady=(0, 20))
-        
-        # Activation Toggles
-        ctk.CTkLabel(f, text="AI ACTIVATION SETTINGS", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", pady=(20, 10))
-        
-        _nick = self.bot.config.get("NICK", "").strip() or "BotUsername"
-        self.sw_tag = ctk.CTkSwitch(f, text=f"Activate on @{_nick} Tag", font=ctk.CTkFont(size=13))
-        self.sw_tag.pack(anchor="w", pady=(5, 0))
-        if self.bot.config.get("TRIGGER_TAG", True): self.sw_tag.select()
-        ctk.CTkLabel(f, text="Triggers when someone tags the bot's username in a message.", text_color="gray", font=ctk.CTkFont(size=11)).pack(anchor="w", padx=35, pady=(0, 10))
-
-        self.sw_cmd = ctk.CTkSwitch(f, text="Activate on Commands", font=ctk.CTkFont(size=13))
-        self.sw_cmd.pack(anchor="w", pady=(5, 0))
-        if self.bot.config.get("TRIGGER_CMD", True): self.sw_cmd.select()
-        ctk.CTkLabel(f, text="Triggers when a message starts with one of the prefixes below.", text_color="gray", font=ctk.CTkFont(size=11)).pack(anchor="w", padx=35, pady=(0, 10))
-
-        self.sw_rep = ctk.CTkSwitch(f, text="Activate on Direct Replies", font=ctk.CTkFont(size=13))
-        self.sw_rep.pack(anchor="w", pady=(5, 0))
-        if self.bot.config.get("TRIGGER_REP", True): self.sw_rep.select()
-        ctk.CTkLabel(f, text="Triggers when someone uses the 'Reply' feature on a bot message.", text_color="gray", font=ctk.CTkFont(size=11)).pack(anchor="w", padx=35, pady=(0, 10))
-
-        self.sw_other_rep = ctk.CTkSwitch(f, text="Allow Triggers inside Other Replies", font=ctk.CTkFont(size=13))
-        self.sw_other_rep.pack(anchor="w", pady=(5, 0))
-        if self.bot.config.get("TRIGGER_OTHER_REP", True): self.sw_other_rep.select()
-        ctk.CTkLabel(f, text="If ON, commands/tags still trigger even if sent in a reply to someone else.", text_color="gray", font=ctk.CTkFont(size=11)).pack(anchor="w", padx=35, pady=(0, 10))
-
-        ctk.CTkLabel(f, text="Custom Commands", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", pady=(15, 2))
-        self.e_cmds = ctk.CTkEntry(f, font=ctk.CTkFont(size=14), height=40, corner_radius=8)
-        self.e_cmds.pack(fill="x", pady=(0, 2))
-        self.e_cmds.insert(0, self.bot.config.get("COMMANDS", "!ai, !aichat"))
-        ctk.CTkLabel(f, text="Ex: !ai, !chat, !ask. Separate multiple options with commas.", text_color="gray", font=ctk.CTkFont(size=11)).pack(anchor="w", pady=(0, 10))
-        
-        ctk.CTkButton(f, text="Save Bot Settings", font=ctk.CTkFont(weight="bold", size=14), height=45, corner_radius=8, command=self.save_bot_config).pack(fill="x", pady=20)
-
-    def build_ai(self):
-        ctk.CTkLabel(self.p_ai, text="AI BRAIN SETTINGS", font=ctk.CTkFont(size=28, weight="bold")).pack(anchor="w", padx=40, pady=(40, 5))
-        ctk.CTkLabel(self.p_ai, text="Configure Groq interaction and personality.", text_color="gray").pack(anchor="w", padx=40)
-
-        f = ctk.CTkFrame(self.p_ai, fg_color="transparent")
-        f.pack(fill="both", expand=True, padx=40, pady=20)
-
-        # Master Enable Toggle
-        self.sw_ai_enabled = ctk.CTkSwitch(f, text="AI Brain Enabled (Global)", font=ctk.CTkFont(size=14, weight="bold"))
-        self.sw_ai_enabled.pack(anchor="w", pady=(0, 2))
-        if self.ai.config.get("enabled", True): self.sw_ai_enabled.select()
-        ctk.CTkLabel(f, text="Master switch to turn all AI features on or off without disconnecting the bot.", text_color="gray", font=ctk.CTkFont(size=11)).pack(anchor="w", padx=35, pady=(0, 20))
-
-        ctk.CTkLabel(f, text="Groq API Key", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", pady=(10, 2))
-        
-        sub_ai = ctk.CTkFrame(f, fg_color="transparent")
-        sub_ai.pack(fill="x", pady=(0, 2))
-        
-        self.e_ai_key = ctk.CTkEntry(sub_ai, font=ctk.CTkFont(size=14), show="*", height=40, corner_radius=8)
-        self.e_ai_key.pack(side="left", fill="x", expand=True)
-        self.e_ai_key.insert(0, self.ai.config.get("api_key", ""))
-        
-        def toggle_ai_eye():
-            if self.e_ai_key.cget("show") == "":
-                self.e_ai_key.configure(show="*")
-                self.btn_ai_eye.configure(text="👁")
-            else:
-                self.e_ai_key.configure(show="")
-                self.btn_ai_eye.configure(text="🔒")
-                
-        self.btn_ai_eye = ctk.CTkButton(sub_ai, text="👁", width=40, height=40, command=toggle_ai_eye, fg_color="#343638", hover_color="#3E4042", text_color="gray")
-        self.btn_ai_eye.pack(side="right", padx=(5, 0))
-        _groq_row = ctk.CTkFrame(f, fg_color="transparent")
-        _groq_row.pack(anchor="w", pady=(0, 10))
-        ctk.CTkLabel(_groq_row, text="Required to connect to the LLM. Get your free key at ", text_color="gray", font=ctk.CTkFont(size=11)).pack(side="left")
-        ctk.CTkButton(_groq_row, text="console.groq.com/keys", font=ctk.CTkFont(size=11, underline=True), fg_color="transparent", text_color="#3B8ED0", hover_color=("gray85", "gray20"), height=18, width=0, command=lambda: webbrowser.open("https://console.groq.com/keys")).pack(side="left")
-
-        ctk.CTkLabel(f, text="System Instruction (Persona)", font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", pady=(10, 2))
-        self.t_ai_instr = ctk.CTkTextbox(f, font=ctk.CTkFont(size=13), height=140, wrap="word", corner_radius=8)
-        self.t_ai_instr.pack(fill="both", expand=True)
-        self.t_ai_instr.insert("1.0", self.ai.config.get("system_instruction", ""))
-        ctk.CTkLabel(f, text="Describe the bot's behavior, tone, and any fundamental rules or knowledge.", text_color="gray", font=ctk.CTkFont(size=11)).pack(anchor="w", pady=(2, 20))
-
-        self._isolate_scroll(self.t_ai_instr, self.p_ai)
-        self._auto_resize_textbox(self.t_ai_instr)
-
-        ctk.CTkButton(f, text="Save AI Settings", font=ctk.CTkFont(weight="bold", size=14), height=45, corner_radius=8, command=self.save_ai_config).pack(fill="x", pady=20)
-
-        # Chatter Contexts
-        ctk.CTkLabel(self.p_ai, text="CHATTER CONTEXTS", font=ctk.CTkFont(size=20, weight="bold")).pack(anchor="w", padx=40, pady=(30, 2))
-        ctk.CTkLabel(self.p_ai, text="Add context about specific chatters so the bot can personalise responses to them.", text_color="gray", font=ctk.CTkFont(size=11)).pack(anchor="w", padx=40, pady=(0, 10))
-        
-        self.ctx_container = ctk.CTkFrame(self.p_ai, fg_color="transparent")
-        self.ctx_container.pack(fill="both", expand=True, padx=40)
-
-        self.refresh_context_ui()
-
-    def refresh_context_ui(self):
-        # Clear container
-        for widget in self.ctx_container.winfo_children():
-            widget.destroy()
-
-        # Add New row
-        add_f = ctk.CTkFrame(self.ctx_container, fg_color="#18181A", corner_radius=8)
-        add_f.pack(fill="x", pady=(0, 20), ipadx=10, ipady=10)
-
-        ctk.CTkLabel(add_f, text="Add New Context", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=10, pady=(5, 5))
-
-        entry_f = ctk.CTkFrame(add_f, fg_color="transparent")
-        entry_f.pack(fill="x", padx=10, pady=(0, 5))
-
-        e_user = ctk.CTkEntry(entry_f, placeholder_text="Username", width=150)
-        e_user.pack(side="left", padx=(0, 10), anchor="n")
-
-        e_info = ctk.CTkTextbox(entry_f, height=60, wrap="word", fg_color="#1E1E1E", border_width=1, border_color="#333333")
-        e_info.pack(side="left", fill="x", expand=True, padx=(0, 10))
-        
-        self._isolate_scroll(e_info, self.p_ai)
-        self._auto_resize_textbox(e_info)
-
-        def on_add():
-            u = e_user.get().strip().lower()
-            i = e_info.get("1.0", "end-1c").strip()
-            if u and i:
-                ctx = self.ai.config.get("chatter_context", {})
-                ctx[u] = i
-                self.ai.config["chatter_context"] = ctx
-                self.ai.save_config()
-                self.refresh_context_ui()
-
-        ctk.CTkButton(entry_f, text="Add", width=80, fg_color="#2FA572", hover_color="#1F754E", command=on_add).pack(side="right", anchor="n")
-
-        # Existing contexts
-        ctx_dict = self.ai.config.get("chatter_context", {})
-        for user in sorted(ctx_dict.keys()):
-            info = ctx_dict[user]
-            
-            card = ctk.CTkFrame(self.ctx_container, fg_color="#1E1E1E", corner_radius=8)
-            card.pack(fill="x", pady=5, ipadx=10, ipady=10)
-
-            top = ctk.CTkFrame(card, fg_color="transparent")
-            top.pack(fill="x", padx=10, pady=(0, 5))
-
-            ctk.CTkLabel(top, text=f"@{user}", font=ctk.CTkFont(weight="bold", size=14), text_color="#7AA2F7").pack(side="left")
-
-            def make_delete(u=user):
-                def do_delete():
-                    confirmed = messagebox.askyesno(
-                        "Remove Context",
-                        f"Are you sure you want to remove the context for @{u}?\n\nThis cannot be undone.",
-                        icon="warning"
-                    )
-                    if not confirmed:
-                        return
-                    c = self.ai.config.get("chatter_context", {})
-                    if u in c:
-                        del c[u]
-                        self.ai.config["chatter_context"] = c
-                        self.ai.save_config()
-                        self.refresh_context_ui()
-                return do_delete
-
-            ctk.CTkButton(top, text="Remove", width=60, height=24, fg_color="#D14E53", hover_color="#A1363A", font=ctk.CTkFont(size=12), command=make_delete(user)).pack(side="right")
-
-            txt = ctk.CTkTextbox(card, height=60, wrap="word", fg_color="#16161E", border_width=1, border_color="#333333")
-            txt.pack(fill="x", padx=10)
-            txt.insert("1.0", info)
-
-            self._isolate_scroll(txt, self.p_ai)
-            self._auto_resize_textbox(txt)
-
-            def make_save(u=user, t_widget=txt):
-                def do_save():
-                    i = t_widget.get("1.0", "end-1c").strip()
-                    c = self.ai.config.get("chatter_context", {})
-                    c[u] = i
-                    self.ai.config["chatter_context"] = c
-                    self.ai.save_config()
-                return do_save
-
-            btn_save = ctk.CTkButton(card, text="Save Changes", width=100, height=24, fg_color="#565F89", hover_color="#343A59", font=ctk.CTkFont(size=12), command=make_save(user, txt))
-            btn_save.pack(anchor="e", padx=10, pady=(5, 0))
-    def show_page(self, page_name):
-        self.p_dashboard.pack_forget()
-        self.p_config.pack_forget()
-        self.p_ai.pack_forget()
-        
-        for p, btn in self.nav_btns.items():
-            if p == page_name:
-                # Active tab styling
-                btn.configure(fg_color="#3B8ED0", text_color="white", hover_color="#2A6B9C")
-            else:
-                # Inactive tab styling
-                btn.configure(fg_color="transparent", text_color=("gray10", "gray90"), hover_color=("gray70", "gray30"))
-        
-        if page_name == "dashboard": self.p_dashboard.pack(fill="both", expand=True)
-        elif page_name == "config": self.p_config.pack(fill="both", expand=True)
-        elif page_name == "ai": self.p_ai.pack(fill="both", expand=True)
-
-    def log(self, text, color=None):
+    def log(text, color=ft.Colors.WHITE_70):
         ts = datetime.datetime.now().strftime("%H:%M:%S")
-        self.log_area.configure(state="normal")
-        self.log_area.insert("end", f"[{ts}] {text}\n")
-        self.log_area.see("end")
-        self.log_area.configure(state="disabled")
+        log_lines.append(f"[{ts}] {text}")
+        if len(log_lines) > 500:
+            log_lines[:] = log_lines[-500:]
+        log_area.value = "\n".join(log_lines)
+        page.update()
 
-    def toggle_bot(self):
-        if self.is_running:
-            self.stop_bot()
+    def toggle_bot(e):
+        nonlocal running, bot_thread, bot_instance
+        if running:
+            if bot_instance:
+                bot_instance.stop_event.set()
+            running = False
+            btn_toggle.text = "▶ START BOT"
+            btn_toggle.style = btn_start_style
+            status_text.value = "● STOPPED"
+            status_text.color = ft.Colors.RED
+            page.update()
         else:
-            self.start_bot()
+            if not bot_config["TOKEN"] or not bot_config["NICK"] or not bot_config["CHANNEL"]:
+                page.show_dialog(ft.AlertDialog(title=ft.Text("Missing credentials. Set up Bot Config first.")))
+                return
+            running = True
+            btn_toggle.text = "■ STOP BOT"
+            btn_toggle.style = btn_stop_style
+            status_text.value = "● RUNNING"
+            status_text.color = ft.Colors.GREEN
+            page.update()
 
-    def start_bot(self):
-        if self.is_running: return
-        self.is_running = True
-        self.btn_toggle.configure(text="■ STOP BOT", fg_color="#F7768E", hover_color="#C95F71")
-        self.status_indicator.configure(text="● RUNNING", text_color="#9ECE6A")
-        threading.Thread(target=self.bot.run, args=(self.log,), daemon=True).start()
+            def run_irc():
+                nonlocal bot_instance
+                irc = IRCBot(bot_config, ai_module, log)
+                bot_instance = irc
+                irc.run()
 
-    def stop_bot(self):
-        if not self.is_running: return
-        self.bot.stop_event.set()
-        self.is_running = False
-        self.btn_toggle.configure(text="▶ START BOT", fg_color="#9ECE6A", hover_color="#7BB04A")
-        self.status_indicator.configure(text="● STOPPED", text_color="#F7768E")
+            bot_thread = threading.Thread(target=run_irc, daemon=True)
+            bot_thread.start()
 
-    def save_bot_config(self):
-        data = self.bot.config
-        data["NICK"] = self.e_nick.get().strip()
-        data["CHANNEL"] = self.e_chan.get().strip().replace("#", "").lower()
-        data["CONNECT_MSG_ENABLED"] = bool(self.sw_conn.get())
-        data["DISCONNECT_MSG_ENABLED"] = bool(self.sw_disc.get())
-        
-        # Update dynamic label for @Mention switch
-        _nick = data["NICK"] or "BotUsername"
-        self.sw_tag.configure(text=f"Activate on @{_nick} Tag")
+    # ── Twitch Login ──────────────────────────────────────────────────────
 
-        data["TRIGGER_TAG"] = bool(self.sw_tag.get())
-        data["TRIGGER_CMD"] = bool(self.sw_cmd.get())
-        data["TRIGGER_REP"] = bool(self.sw_rep.get())
-        data["TRIGGER_OTHER_REP"] = bool(self.sw_other_rep.get())
-        data["COMMANDS"] = self.e_cmds.get().strip()
-        data["CLIENT_ID"] = self.e_client_id.get().strip()
-        
-        self.bot.save_config(data)
-        messagebox.showinfo("Success", "Bot settings saved!")
-
-    def twitch_login(self):
-        client_id = self.e_client_id.get().strip()
+    def start_twitch_login(e):
+        client_id = e_client_id.value.strip()
         if not client_id:
-            messagebox.showerror("Error", "Enter your Twitch App Client ID first (see field above).")
+            page.show_dialog(ft.AlertDialog(
+                title=ft.Text("Enter your Twitch App Client ID first."),
+            ))
             return
 
-        dialog = ctk.CTkToplevel(self.root)
-        dialog.title("Twitch Login")
-        dialog.geometry("480x260")
-        dialog.transient(self.root)
-        dialog.grab_set()
+        dlg = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Twitch Login"),
+            content=ft.Column([ft.Text("Starting login...")], width=420, height=250),
+        )
+        page.show_dialog(dlg)
+        page.update()
 
-        ctk.CTkLabel(dialog, text="Twitch Device Authorization", font=ctk.CTkFont(size=16, weight="bold")).pack(pady=(20, 5))
-        ctk.CTkLabel(dialog, text="A code will appear below. Click the button to open Twitch's activation\npage, sign in with your bot account, and enter the code.", justify="left").pack(padx=20)
-
-        try:
-            resp = requests.post("https://id.twitch.tv/oauth2/device", data={
-                "client_id": client_id, "scopes": "chat:read chat:write"
-            })
-            data = resp.json()
-            if resp.status_code != 200:
-                messagebox.showerror("Error", data.get("message", str(data)))
-                dialog.destroy()
-                return
-
-            device_code = data["device_code"]
-            user_code = data["user_code"]
-            interval = data.get("interval", 5)
-
-            code_frame = ctk.CTkFrame(dialog, fg_color="#18181A", corner_radius=8)
-            code_frame.pack(pady=10, ipadx=20, ipady=10)
-            ctk.CTkLabel(code_frame, text=user_code, font=ctk.CTkFont(size=32, weight="bold"), text_color="#9147FF").pack()
-
-            btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
-            btn_frame.pack(pady=5)
-            ctk.CTkButton(btn_frame, text="🌐 Open twitch.tv/activate", font=ctk.CTkFont(weight="bold"), fg_color="#9147FF", hover_color="#772CE8", command=lambda: webbrowser.open("https://www.twitch.tv/activate")).pack(side="left", padx=5)
-            ctk.CTkButton(btn_frame, text="Cancel", fg_color="#565F89", hover_color="#343A59", command=dialog.destroy).pack(side="left", padx=5)
-
-            status_label = ctk.CTkLabel(dialog, text="⏳ Waiting for you to authorize...", text_color="gray")
-            status_label.pack(pady=(5, 15))
-
-            def poll():
-                import time as _t
-                nonlocal interval
-                while True:
-                    _t.sleep(interval)
-                    try:
-                        pr = requests.post("https://id.twitch.tv/oauth2/token", data={
-                            "client_id": client_id,
-                            "scopes": "chat:read chat:write",
-                            "device_code": device_code,
-                            "grant_type": "urn:ietf:params:oauth:grant-type:device_code"
-                        })
-                        if pr.status_code == 200:
-                            j = pr.json()
-                            tok = j["access_token"]
-                            rt = j.get("refresh_token", "")
-                            self.root.after(0, lambda t=tok, r=rt: self._on_twitch_login_success(dialog, t, r))
-                            return
-                        err = pr.json().get("error", "")
-                        if err == "authorization_pending":
-                            continue
-                        if err == "slow_down":
-                            interval += 1
-                            continue
-                        if err == "expired_token":
-                            self.root.after(0, lambda: status_label.configure(text="✗ Code expired. Close and try again.", text_color="#F7768E"))
-                            return
-                        self.root.after(0, lambda e=err: status_label.configure(text=f"✗ {e}", text_color="#F7768E"))
-                        return
-                    except Exception as e:
-                        self.root.after(0, lambda: status_label.configure(text=f"✗ {str(e)[:30]}", text_color="#F7768E"))
-                        return
-
-            threading.Thread(target=poll, daemon=True).start()
-
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to start login: {str(e)[:60]}")
-            dialog.destroy()
-
-    def _on_twitch_login_success(self, dialog, token, refresh_token=""):
-        dialog.destroy()
-        self.bot.config["TOKEN"] = token
-        if refresh_token:
-            self.bot.config["REFRESH_TOKEN"] = refresh_token
-        self.bot.save_config(self.bot.config)
-        self.log("Twitch token obtained and saved.", "#9ECE6A")
-        messagebox.showinfo("Success", "Logged in to Twitch! The token has been saved automatically.")
-
-    def save_ai_config(self):
-        key = self.e_ai_key.get().strip()
-        instr = self.t_ai_instr.get("1.0", "end").strip()
-        
-        is_en = bool(self.sw_ai_enabled.get())
-
-        self.ai.update_config(key, instr, enabled=is_en)
-        messagebox.showinfo("Success", "AI settings saved!")
-        
-        if not is_en:
-            self.log("AI Brain has been disabled.", "#F7768E")
-        else:
-            self.log("AI Brain settings updated.", "#9ECE6A")
-
-    def check_for_updates(self):
-        try:
-            if "YourUsername" in GITHUB_REPO: return
-            resp = requests.get(f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest", timeout=5)
-            if resp.status_code == 200:
-                data = resp.json()
-                latest_tag = data.get("tag_name", "")
-                if parse_semver(latest_tag) > parse_semver(VERSION):
-                    assets = data.get("assets", [])
-                    # Find the .zip file specifically, not the installer
-                    zip_asset = next((a for a in assets if a["name"].endswith(".zip")), None)
-                    if zip_asset:
-                        dl_url = zip_asset["browser_download_url"]
-                        self.root.after(0, lambda: self.show_update_button(latest, dl_url))
-        except: pass
-
-    def show_update_button(self, version, url):
-        self.btn_update = ctk.CTkButton(self.p_dashboard, text=f"🎉 Update available: v{version}", fg_color="#E0AF68", text_color="black", hover_color="#C09048", font=ctk.CTkFont(weight="bold"), command=lambda: self.do_update(url))
-        self.btn_update.pack(pady=20)
-
-    def do_update(self, url):
-        import zipfile
-        self.btn_update.configure(state="disabled", text="Downloading Update... (Please wait)")
-        def _dl():
+        def do_login():
             try:
-                r = requests.get(url, stream=True, timeout=30)
-                zip_path = os.path.join(BASE_DIR, "update.zip")
-                with open(zip_path, "wb") as f:
-                    for chunk in r.iter_content(chunk_size=8192):
-                        f.write(chunk)
-                
-                temp_update_dir = os.path.join(BASE_DIR, "update_temp")
-                if os.path.exists(temp_update_dir): 
-                    import shutil
-                    shutil.rmtree(temp_update_dir)
-                os.makedirs(temp_update_dir)
-                
-                with zipfile.ZipFile(zip_path, 'r') as zf:
-                    zf.extractall(temp_update_dir)
-
-                # The zip should contain an AIChatbot/ folder, but handle both cases
-                source_dir = os.path.join(temp_update_dir, "AIChatbot")
-                if not os.path.exists(source_dir):
-                    # If the folder is missing, use the extracted root (files are at top level)
-                    source_dir = temp_update_dir
-
-                # Verify the source directory exists
-                if not os.path.exists(source_dir):
-                    raise Exception(f"Could not find update files in zip. Contents: {os.listdir(temp_update_dir)}")
-                
-                bat_path = os.path.join(BASE_DIR, "update.bat")
-                current_exe = sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(__file__)
-                if not getattr(sys, 'frozen', False):
-                    self.root.after(0, lambda: self.btn_update.configure(text="Update downloaded (Run script manually)"))
+                resp = requests.post("https://id.twitch.tv/oauth2/device", data={
+                    "client_id": client_id, "scopes": "chat:read chat:write"
+                })
+                data = resp.json()
+                if resp.status_code != 200:
+                    page.show_dialog(ft.AlertDialog(title=ft.Text(data.get("message", str(data)))))
+                    dlg.open = False
+                    page.update()
                     return
-                    
-                exe_name = os.path.basename(current_exe)
-                log_file = os.path.join(BASE_DIR, "update_log.txt")
-                exclude_file = os.path.join(source_dir, 'exclude.txt')
-                exclude_clause = f"/EXCLUDE:{exclude_file}" if os.path.exists(exclude_file) else ""
-                
-                with open(bat_path, "w") as f:
-                    bat_lines = [
-                        "@echo off",
-                        f"set EXE_NAME={exe_name}",
-                        f"set LOG_FILE={log_file}",
-                        'echo Waiting for application to exit... >> "%LOG_FILE%"',
-                        ":waitloop",
-                        'tasklist /FI "IMAGENAME eq %EXE_NAME%" 2>NUL | find /I "%EXE_NAME%" >NUL',
-                        'if %ERRORLEVEL%==0 (',
-                        '  timeout /t 1 /nobreak >nul',
-                        '  goto waitloop',
-                        ')',
-                        'echo Application exited. Starting update... >> "%LOG_FILE%"',
-                        f'echo Copying from {source_dir} to {BASE_DIR} >> "%LOG_FILE%"',
-                        f'xcopy "{source_dir}\\*" "{BASE_DIR}\\" /S /Y {exclude_clause} 2>&1 >> "%LOG_FILE%"',
-                        f'if %ERRORLEVEL% neq 0 echo ERROR: xcopy failed with code %ERRORLEVEL% >> "%LOG_FILE%"',
-                        f'rmdir /S /Q "{temp_update_dir}" 2>&1 >> "%LOG_FILE%"',
-                        f'del "{zip_path}" 2>&1 >> "%LOG_FILE%"',
-                        f'echo Relaunching from: {current_exe} >> "%LOG_FILE%"',
-                        f'start "" "{current_exe}"',
-                        f'echo Update completed at %date% %time% >> "%LOG_FILE%"',
-                        'del "%~f0"',
-                        ''
-                    ]
-                    f.write("\n".join(bat_lines))
-                
-                # Use subprocess with CREATE_NEW_PROCESS_GROUP to detach batch process
-                subprocess.Popen(
-                    [bat_path],
-                    shell=True,
-                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if hasattr(subprocess, 'CREATE_NEW_PROCESS_GROUP') else 0,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
-                )
-                self.root.after(0, self.on_closing)
-            except Exception as e:
-                self.root.after(0, lambda e=e: self.btn_update.configure(text=f"Update Failed: {str(e)[:40]}"))
-        threading.Thread(target=_dl, daemon=True).start()
 
-    def on_closing(self):
-        if self.is_running:
-            self.btn_toggle.configure(state="disabled")
-            self.status_indicator.configure(text="● DISCONNECTING...", text_color="#E0AF68")
-            self.root.update()
-            
-            self.bot.stop_event.set()
-            start_wait = time.time()
-            # Wait up to 2.5 seconds for the bot thread to send its message and close sock
-            while self.bot.sock is not None and (time.time() - start_wait) < 2.5:
-                self.root.update()
-                time.sleep(0.05)
-                
-        self.root.destroy()
-        os._exit(0)
+                device_code = data["device_code"]
+                user_code = data["user_code"]
+                interval = data.get("interval", 5)
+
+                code_text = ft.Text(user_code, size=32, weight=ft.FontWeight.BOLD, color=ft.Colors.PURPLE)
+                status_label = ft.Text("Waiting for authorization...", color=ft.Colors.GREY)
+                btn_open = ft.FilledButton("Open twitch.tv/activate", on_click=lambda e: webbrowser.open("https://www.twitch.tv/activate"))
+
+                dlg.content = ft.Column([
+                    ft.Text("Enter this code on the Twitch activation page:", size=14),
+                    ft.Container(code_text, alignment=ft.alignment.center, margin=20),
+                    btn_open,
+                    status_label,
+                ], width=420, height=250, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+                page.update()
+
+                def poll():
+                    nonlocal interval
+                    import time as _t
+                    while True:
+                        _t.sleep(interval)
+                        try:
+                            pr = requests.post("https://id.twitch.tv/oauth2/token", data={
+                                "client_id": client_id, "scopes": "chat:read chat:write",
+                                "device_code": device_code,
+                                "grant_type": "urn:ietf:params:oauth:grant-type:device_code"
+                            })
+                            if pr.status_code == 200:
+                                j = pr.json()
+                                tok = j["access_token"]
+                                dlg.open = False
+                                page.update()
+                                on_login_success(tok)
+                                return
+                            err = pr.json().get("error", "")
+                            if err == "authorization_pending":
+                                continue
+                            if err == "slow_down":
+                                interval += 1
+                                continue
+                            if err == "expired_token":
+                                status_label.value = "Code expired. Try again."
+                                status_label.color = ft.Colors.RED
+                                page.update()
+                                return
+                            status_label.value = f"Error: {err}"
+                            status_label.color = ft.Colors.RED
+                            page.update()
+                            return
+                        except Exception as ex:
+                            status_label.value = f"Error: {str(ex)[:30]}"
+                            status_label.color = ft.Colors.RED
+                            page.update()
+                            return
+
+                threading.Thread(target=poll, daemon=True).start()
+
+            except Exception as ex:
+                dlg.open = False
+                page.update()
+                page.show_dialog(ft.AlertDialog(title=ft.Text(f"Login failed: {str(ex)[:60]}")))
+
+        threading.Thread(target=do_login, daemon=True).start()
+
+    def on_login_success(token):
+        bot_config["TOKEN"] = token
+        bot_config.save()
+        log("Twitch token obtained and saved.", ft.Colors.GREEN)
+        try:
+            vr = requests.get("https://id.twitch.tv/oauth2/validate",
+                              headers={"Authorization": f"Bearer {token}"}, timeout=5)
+            if vr.status_code == 200:
+                login_name = vr.json().get("login", "")
+                if login_name:
+                    bot_config["NICK"] = login_name
+                    bot_config.save()
+                    e_nick.value = login_name
+                    page.update()
+                    log(f"Bot username auto-filled: {login_name}", ft.Colors.GREEN)
+        except Exception:
+            pass
+
+    # ── Save Handlers ─────────────────────────────────────────────────────
+
+    def save_bot_config(e):
+        bot_config["NICK"] = e_nick.value.strip()
+        bot_config["CHANNEL"] = e_chan.value.strip().replace("#", "").lower()
+        bot_config["CLIENT_ID"] = e_client_id.value.strip()
+        bot_config["CONNECT_MSG_ENABLED"] = sw_conn.value
+        bot_config["DISCONNECT_MSG_ENABLED"] = sw_disc.value
+        bot_config["TRIGGER_TAG"] = sw_tag.value
+        bot_config["TRIGGER_CMD"] = sw_cmd.value
+        bot_config["TRIGGER_REP"] = sw_rep.value
+        bot_config["TRIGGER_OTHER_REP"] = sw_other_rep.value
+        bot_config["COMMANDS"] = e_cmds.value.strip()
+        bot_config.save()
+        sw_tag.label = f"Activate on @{e_nick.value.strip() or 'Bot'} Tag"
+        page.show_dialog(ft.AlertDialog(title=ft.Text("Bot settings saved!")))
+        page.update()
+
+    def save_ai_config(e):
+        ai_config["api_key"] = e_ai_key.value.strip()
+        ai_config["enabled"] = sw_ai_enabled.value
+        ai_config["system_instruction"] = t_ai_instr.value.strip()
+        ai_config.save()
+        ai_module._init_client()
+        page.show_dialog(ft.AlertDialog(title=ft.Text("AI settings saved!")))
+        page.update()
+
+    # ── Chatter Context ───────────────────────────────────────────────────
+
+    ctx_container = ft.Column(spacing=5)
+
+    def refresh_contexts():
+        ctx_container.controls.clear()
+
+        e_user = ft.TextField(label="Username", width=150, text_size=13)
+        e_info = ft.TextField(label="Context", multiline=True, min_lines=2, max_lines=4, expand=True, text_size=13)
+
+        def on_add(e):
+            u = e_user.value.strip().lower()
+            i = e_info.value.strip()
+            if u and i:
+                ctx = ai_config.get("chatter_context", {})
+                ctx[u] = i
+                ai_config["chatter_context"] = ctx
+                ai_config.save()
+                refresh_contexts()
+
+        add_card = ft.Container(
+            content=ft.Column([
+                ft.Text("Add New Context", weight=ft.FontWeight.BOLD, size=14),
+                ft.Row([
+                    e_user,
+                    e_info,
+                    ft.FilledButton("Add", on_click=on_add, bgcolor=ft.Colors.GREEN, color=ft.Colors.BLACK),
+                ]),
+            ]),
+            bgcolor="#18181A",
+            border_radius=8,
+            padding=10,
+        )
+        ctx_container.controls.append(add_card)
+
+        ctx_dict = ai_config.get("chatter_context", {})
+        for username in sorted(ctx_dict.keys()):
+            info = ctx_dict[username]
+            t_info = ft.TextField(value=info, multiline=True, min_lines=2, max_lines=4, expand=True, text_size=13)
+
+            def make_save(u, field):
+                def fn(e):
+                    ctx = ai_config.get("chatter_context", {})
+                    ctx[u] = field.value.strip()
+                    ai_config["chatter_context"] = ctx
+                    ai_config.save()
+                return fn
+
+            def make_remove(u):
+                def fn(e):
+                    ctx = ai_config.get("chatter_context", {})
+                    ctx.pop(u, None)
+                    ai_config["chatter_context"] = ctx
+                    ai_config.save()
+                    refresh_contexts()
+                return fn
+
+            card = ft.Container(
+                content=ft.Column([
+                    ft.Text(f"@{username}", weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_400, size=14),
+                    ft.Row([
+                        t_info,
+                        ft.Column([
+                            ft.IconButton(ft.Icons.SAVE_OUTLINED, on_click=make_save(username, t_info), tooltip="Save"),
+                            ft.IconButton(ft.Icons.DELETE_OUTLINED, on_click=make_remove(username), tooltip="Remove"),
+                        ]),
+                    ]),
+                ]),
+                bgcolor="#1E1E1E",
+                border_radius=8,
+                padding=10,
+                margin=ft.Margin(0, 5, 0, 5),
+            )
+            ctx_container.controls.append(card)
+
+        page.update()
+
+    refresh_contexts()
+
+    # ── Auto-Update ───────────────────────────────────────────────────────
+
+    update_banner = ft.Container(visible=False)
+
+    def on_update_available(version, url):
+        if version is None:
+            return
+        update_banner.visible = True
+        update_banner.content = ft.Container(
+            content=ft.Row([
+                ft.Text(f"Update v{version} available!", weight=ft.FontWeight.BOLD, color=ft.Colors.AMBER),
+                ft.ProgressBar(width=200, visible=False),
+                ft.FilledButton("Download & Install", on_click=lambda e: start_update(url)),
+                ft.IconButton(ft.Icons.CLOSE, on_click=lambda e: setattr(update_banner, 'visible', False) or page.update()),
+            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            bgcolor="#2A2A2A",
+            border_radius=8,
+            padding=10,
+            margin=ft.Margin(0, 0, 0, 10),
+        )
+        page.update()
+
+    def start_update(url):
+        progress = ft.ProgressBar(width=200)
+        update_banner.content.content.controls[2] = progress
+        update_banner.content.content.controls[2].visible = True
+        page.update()
+
+        def on_done(path, error):
+            if error:
+                page.show_dialog(ft.AlertDialog(title=ft.Text(f"Update failed: {error}")))
+                return
+            if path:
+                page.show_dialog(ft.AlertDialog(
+                    title=ft.Text("Update downloaded"),
+                    content=ft.Text("The installer will launch. Please close the app after installation."),
+                ))
+                subprocess.Popen([path, "/VERYSILENT", "/SUPPRESSMSGBOXES"])
+
+        download_update(url, done_callback=on_done)
+
+    check_for_update(on_update_available)
+
+    # ── UI Controls ───────────────────────────────────────────────────────
+
+    log_area = ft.TextField(
+        multiline=True, read_only=True,
+        expand=True,
+        text_size=13,
+        bgcolor="#18181A", border_color=ft.Colors.TRANSPARENT,
+    )
+
+    status_text = ft.Text("● STOPPED", color=ft.Colors.RED, size=16, weight=ft.FontWeight.BOLD)
+
+    btn_start_style = ft.ButtonStyle(bgcolor={"": ft.Colors.GREEN_500}, color={"": ft.Colors.BLACK})
+    btn_stop_style = ft.ButtonStyle(bgcolor={"": ft.Colors.RED_500}, color={"": ft.Colors.WHITE})
+    btn_toggle = ft.FilledButton("▶ START BOT", style=btn_start_style, on_click=toggle_bot)
+
+    v_text = ft.Text(f"v{VERSION}", color=ft.Colors.BLUE_300, size=12)
+
+    dashboard = ft.Column([
+        ft.Row([status_text, v_text], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+        update_banner,
+        log_area,
+        ft.Row([btn_toggle], alignment=ft.MainAxisAlignment.CENTER),
+    ], expand=True)
+
+    # ── Bot Config Page ───────────────────────────────────────────────────
+
+    e_client_id = ft.TextField(label="Twitch App Client ID", value=bot_config["CLIENT_ID"], expand=True, text_size=14, height=45)
+    e_nick = ft.TextField(label="Bot Username", value=bot_config["NICK"], expand=True, text_size=14, height=45)
+    e_chan = ft.TextField(label="Target Channel", value=bot_config["CHANNEL"], expand=True, text_size=14, height=45)
+
+    btn_login = ft.FilledButton("Login with Twitch", on_click=start_twitch_login,
+                                   bgcolor=ft.Colors.PURPLE_600, color=ft.Colors.WHITE)
+
+    sw_conn = ft.Switch(label="Send Connect Message", value=bot_config["CONNECT_MSG_ENABLED"])
+    sw_disc = ft.Switch(label="Send Disconnect Message", value=bot_config["DISCONNECT_MSG_ENABLED"])
+    sw_tag = ft.Switch(label=f"Activate on @{bot_config['NICK'] or 'Bot'} Tag", value=bot_config["TRIGGER_TAG"])
+    sw_cmd = ft.Switch(label="Activate on Commands", value=bot_config["TRIGGER_CMD"])
+    sw_rep = ft.Switch(label="Activate on Direct Replies", value=bot_config["TRIGGER_REP"])
+    sw_other_rep = ft.Switch(label="Allow Triggers in Other Replies", value=bot_config["TRIGGER_OTHER_REP"])
+    e_cmds = ft.TextField(label="Custom Commands", value=bot_config["COMMANDS"], expand=True, text_size=14,
+                          hint_text="!ai, !aichat")
+    btn_save_bot = ft.FilledButton("Save Bot Settings", on_click=save_bot_config,
+                                      bgcolor=ft.Colors.BLUE_600, color=ft.Colors.WHITE)
+
+    bot_config_page = ft.Column([
+        ft.Text("BOT CREDENTIALS", size=28, weight=ft.FontWeight.BOLD),
+        ft.Text("Connection settings for Twitch IRC.", color=ft.Colors.GREY, size=13),
+        ft.Container(height=20),
+        e_client_id,
+        ft.Row([btn_login, ft.Text("Register an app at dev.twitch.tv, then paste your Client ID.",
+                                    color=ft.Colors.GREY, size=12)], vertical_alignment=ft.CrossAxisAlignment.CENTER),
+        ft.Container(height=10),
+        e_nick,
+        ft.Text("Auto-filled after Twitch login. Can also be set manually.", color=ft.Colors.GREY, size=12),
+        ft.Container(height=10),
+        e_chan,
+        ft.Container(height=20),
+        ft.Text("MESSAGES", size=18, weight=ft.FontWeight.BOLD),
+        sw_conn,
+        sw_disc,
+        ft.Container(height=20),
+        ft.Text("AI ACTIVATION", size=18, weight=ft.FontWeight.BOLD),
+        sw_tag,
+        sw_cmd,
+        sw_rep,
+        sw_other_rep,
+        ft.Container(height=10),
+        e_cmds,
+        ft.Container(height=20),
+        btn_save_bot,
+    ], expand=True, scroll=ft.ScrollMode.AUTO)
+
+    # ── AI Config Page ────────────────────────────────────────────────────
+
+    sw_ai_enabled = ft.Switch(label="AI Brain Enabled (Global)", value=ai_config["enabled"])
+    e_ai_key = ft.TextField(label="Groq API Key", value=ai_config["api_key"], password=True, expand=True,
+                            text_size=14, hint_text="gsk_...")
+    t_ai_instr = ft.TextField(label="System Instruction", value=ai_config["system_instruction"],
+                              multiline=True, min_lines=6, max_lines=12, expand=True, text_size=14)
+    btn_save_ai = ft.FilledButton("Save AI Settings", on_click=save_ai_config,
+                                     bgcolor=ft.Colors.BLUE_600, color=ft.Colors.WHITE)
+
+    ai_config_page = ft.Column([
+        ft.Text("AI BRAIN SETTINGS", size=28, weight=ft.FontWeight.BOLD),
+        ft.Text("Configure Groq interaction and personality.", color=ft.Colors.GREY, size=13),
+        ft.Container(height=20),
+        sw_ai_enabled,
+        ft.Container(height=10),
+        e_ai_key,
+        ft.Text("Get your free key at console.groq.com/keys", color=ft.Colors.GREY, size=12),
+        ft.Container(height=15),
+        t_ai_instr,
+        ft.Container(height=20),
+        btn_save_ai,
+        ft.Container(height=30),
+        ft.Text("CHATTER CONTEXTS", size=22, weight=ft.FontWeight.BOLD),
+        ft.Text("Add context about specific chatters so the bot can personalise responses.",
+                color=ft.Colors.GREY, size=12),
+        ft.Container(height=10),
+        ctx_container,
+    ], expand=True, scroll=ft.ScrollMode.AUTO)
+
+    # ── Navigation ────────────────────────────────────────────────────────
+
+    content_stack = ft.Stack([
+        ft.Container(dashboard, padding=20, visible=True),
+        ft.Container(bot_config_page, padding=20, visible=False),
+        ft.Container(ai_config_page, padding=20, visible=False),
+    ], expand=True)
+
+    pages = [dashboard, bot_config_page, ai_config_page]
+    page_views = content_stack.controls
+
+    def nav_changed(e):
+        idx = e.control.selected_index
+        for i, c in enumerate(page_views):
+            c.visible = (i == idx)
+        page.update()
+
+    rail = ft.NavigationRail(
+        selected_index=0,
+        label_type=ft.NavigationRailLabelType.ALL,
+        min_width=80,
+        destinations=[
+            ft.NavigationRailDestination(icon=ft.Icons.DASHBOARD, label="Dashboard"),
+            ft.NavigationRailDestination(icon=ft.Icons.SETTINGS, label="Bot Config"),
+            ft.NavigationRailDestination(icon=ft.Icons.PSYCHOLOGY, label="AI Config"),
+        ],
+        on_change=nav_changed,
+    )
+
+    page.add(
+        ft.Row([
+            rail,
+            ft.VerticalDivider(width=1),
+            content_stack,
+        ], expand=True)
+    )
+
+    # Auto-start bot after a moment if credentials are configured
+    if bot_config["TOKEN"] and bot_config["NICK"] and bot_config["CHANNEL"]:
+        threading.Timer(1.0, lambda: toggle_bot(None)).start()
+
 
 if __name__ == "__main__":
-    root = ctk.CTk()
-    if os.path.exists(ICON_PATH):
-        root.iconbitmap(ICON_PATH)
-    app = ModernApp(root)
-    root.mainloop()
+    ft.run(main)

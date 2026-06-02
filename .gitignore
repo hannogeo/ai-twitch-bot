@@ -1,0 +1,13 @@
+dist/
+build/
+*.spec
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+*.egg/
+env/
+venv/
+.venv/
+*.log
+update_setup.exe
