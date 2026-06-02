@@ -314,12 +314,15 @@ def main(page: ft.Page):
             return
         update_banner.visible = True
         update_banner.content = ft.Container(
-            content=ft.Row([
-                ft.Text(f"Update v{version} available!", weight=ft.FontWeight.BOLD, color=ft.Colors.AMBER),
-                ft.ProgressBar(width=200, visible=False),
-                ft.FilledButton("Download & Install", on_click=lambda e: start_update(url)),
-                ft.IconButton(ft.Icons.CLOSE, on_click=lambda e: setattr(update_banner, 'visible', False) or page.update()),
-            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            content=ft.Column([
+                ft.Row([
+                    ft.Text(f"Update {version} available!", weight=ft.FontWeight.BOLD, color=ft.Colors.AMBER, expand=True),
+                    ft.IconButton(ft.Icons.CLOSE, on_click=lambda e: setattr(update_banner, 'visible', False) or page.update()),
+                ]),
+                ft.Row([
+                    ft.FilledButton("Download & Install", on_click=lambda e: start_update(url)),
+                ]),
+            ]),
             bgcolor="#2A2A2A",
             border_radius=8,
             padding=10,
@@ -328,23 +331,58 @@ def main(page: ft.Page):
         page.update()
 
     def start_update(url):
-        progress = ft.ProgressBar(width=200)
-        update_banner.content.content.controls[2] = progress
-        update_banner.content.content.controls[2].visible = True
+        progress_bar = ft.ProgressBar(width=200)
+        status_text = ft.Text("Downloading... 0%", size=12)
+        speed_text = ft.Text("", size=11, color=ft.Colors.GREY)
+
+        update_banner.content = ft.Container(
+            content=ft.Column([
+                ft.Text("Downloading update...", weight=ft.FontWeight.BOLD),
+                progress_bar,
+                ft.Row([status_text, speed_text], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            ]),
+            bgcolor="#2A2A2A",
+            border_radius=8,
+            padding=10,
+            margin=ft.Margin(0, 0, 0, 10),
+        )
         page.update()
 
-        def on_done(path, error):
-            if error:
-                page.show_dialog(ft.AlertDialog(title=ft.Text(f"Update failed: {error}")))
-                return
-            if path:
-                page.show_dialog(ft.AlertDialog(
-                    title=ft.Text("Update downloaded"),
-                    content=ft.Text("The installer will launch. Please close the app after installation."),
-                ))
-                subprocess.Popen([path, "/VERYSILENT", "/SUPPRESSMSGBOXES"])
+        def on_progress(percent, kbps, remaining):
+            status_text.value = f"Downloading... {percent*100:.0f}%"
+            if remaining < 60:
+                speed_text.value = f"{kbps:.0f} KB/s — {remaining:.0f}s left"
+            else:
+                speed_text.value = f"{kbps:.0f} KB/s — {remaining/60:.1f}min left"
+            progress_bar.value = percent
+            page.update()
 
-        download_update(url, done_callback=on_done)
+        def on_downloaded(path, error):
+            if error:
+                status_text.value = f"Download failed: {error}"
+                status_text.color = ft.Colors.RED
+                page.update()
+                return
+            if not path:
+                return
+            status_text.value = "Installing..."
+            speed_text.value = ""
+            progress_bar.value = None
+            page.update()
+
+            def on_applied(err):
+                if err:
+                    status_text.value = f"Update failed: {err}"
+                    status_text.color = ft.Colors.RED
+                    page.update()
+                    return
+                page.window.destroy()
+
+            from updater import apply_update
+            apply_update(path, done_callback=on_applied)
+
+        from updater import download_update
+        download_update(url, progress_callback=on_progress, done_callback=on_downloaded)
 
     check_for_update(on_update_available)
 
