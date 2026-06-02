@@ -254,16 +254,8 @@ def main(page: ft.Page):
             progress_bar.value = None
             page.update()
 
-            def on_applied(err):
-                if err:
-                    status_text.value = f"Update failed: {err}"
-                    status_text.color = ft.Colors.RED
-                    page.update()
-                    return
-                page.window.destroy()
-
             from updater import apply_update
-            apply_update(path, done_callback=on_applied)
+            apply_update(path)
 
         from updater import download_update
         download_update(url, progress_callback=on_progress, done_callback=on_downloaded)

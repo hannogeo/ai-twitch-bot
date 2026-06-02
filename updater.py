@@ -92,8 +92,8 @@ def download_update(url, progress_callback=None, done_callback=None):
     threading.Thread(target=_do, daemon=True).start()
 
 
-def apply_update(zip_path, done_callback=None):
-    """Extract zip, create restart script, and launch it. Calls done_callback(error) before exiting."""
+def apply_update(zip_path):
+    """Extract zip, create restart script, launch it, then exit the app."""
     def _apply():
         try:
             base = get_app_dir()
@@ -135,11 +135,9 @@ del "%~f0"
                 f.write(bat_content)
 
             subprocess.Popen(bat_path, shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
-
-            if done_callback:
-                done_callback(None)
-        except Exception as e:
-            if done_callback:
-                done_callback(str(e))
+        except Exception:
+            import traceback
+            traceback.print_exc()
+        os._exit(0)
 
     threading.Thread(target=_apply, daemon=True).start()
