@@ -1,6 +1,6 @@
 ; Inno Setup Script for AI Twitch Bot
 #define MyAppName "AI Twitch Bot"
-#define MyAppVersion "1.3.0"
+#define MyAppVersion "2.0.2"
 #define MyAppPublisher "hannogeo"
 #define MyAppURL "https://github.com/hannogeo/ai-twitch-bot"
 #define MyAppExeName "AITwitchBot.exe"
@@ -27,8 +27,6 @@ ChangesAssociations=no
 SetupIconFile=app_icon.ico
 UninstallDisplayIcon={app}\app_icon.ico
 UninstallDisplayName={#MyAppName}
-AppUserModelID=hannogeo.AITwitchBot
-AppComments=AI-powered Twitch chat bot
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
