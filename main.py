@@ -1,12 +1,15 @@
 import datetime
 import os
 import platform
+import shutil
 import subprocess
 import sys
 import threading
 import webbrowser
+from pathlib import Path
 
 import flet as ft
+import flet_desktop
 import requests
 
 from ai_module import AIModule
@@ -16,6 +19,15 @@ from updater import (GITHUB_REPO, check_for_update, download_update,
                      get_local_version, parse_semver)
 
 VERSION = get_local_version()
+
+# Clean stale Flet temp extraction dirs to avoid rename conflicts on Windows
+_flet_cache_root = Path.home() / ".flet" / "client"
+_flet_cache_name = f"flet-desktop-full-{flet_desktop.version.version}"
+if _flet_cache_root.exists():
+    for _item in _flet_cache_root.iterdir():
+        # Match temp extraction dirs like "flet-desktop-full-0.85.2.xxxxx"
+        if _item.name.startswith(_flet_cache_name + ".") and _item.is_dir():
+            shutil.rmtree(_item, ignore_errors=True)
 
 
 def main(page: ft.Page):
