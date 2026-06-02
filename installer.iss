@@ -15,6 +15,7 @@ AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
 DefaultDirName={localappdata}\{#MyAppName}
 DefaultGroupName={#MyAppName}
+DisableProgramGroupPage=yes
 AllowNoIcons=yes
 OutputDir=dist
 OutputBaseFilename=AITwitchBot-Setup
@@ -25,6 +26,9 @@ PrivilegesRequired=lowest
 ChangesAssociations=no
 SetupIconFile=app_icon.ico
 UninstallDisplayIcon={app}\app_icon.ico
+UninstallDisplayName={#MyAppName}
+AppUserModelID=hannogeo.AITwitchBot
+AppComments=AI-powered Twitch chat bot
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -41,8 +45,8 @@ Source: "bot_config.json"; DestDir: "{app}"; Flags: ignoreversion onlyifdoesntex
 Source: "ai_config.json"; DestDir: "{app}"; Flags: ignoreversion onlyifdoesntexist
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\app_icon.ico"
-Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
+Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\app_icon.ico"; Comment: "{#MyAppName}"
+Name: "{autoprograms}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; IconFilename: "{app}\app_icon.ico"
 
 [Run]
