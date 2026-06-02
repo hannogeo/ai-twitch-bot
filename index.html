@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Twitch Bot</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0d1117; color: #c9d1d9; line-height: 1.6;
+    min-height: 100vh; display: flex; flex-direction: column;
+  }
+  .container { max-width: 720px; margin: 0 auto; padding: 40px 24px; flex: 1; }
+
+  header { text-align: center; padding: 60px 20px 20px; }
+  header h1 { font-size: 2.2rem; font-weight: 800; color: #f0f6fc; letter-spacing: -.5px; }
+  header h1 span { color: #9147ff; }
+  header p { color: #8b949e; margin-top: 6px; font-size: 1.05rem; }
+
+  .mockup {
+    background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+    margin: 30px auto; max-width: 520px; overflow: hidden;
+  }
+  .mockup-bar {
+    background: #21262d; padding: 10px 14px; display: flex; align-items: center; gap: 8px;
+    border-bottom: 1px solid #30363d;
+  }
+  .mockup-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .mockup-dot.r { background: #ff6b6b; }
+  .mockup-dot.y { background: #ffd93d; }
+  .mockup-dot.g { background: #6bcb77; }
+  .mockup-title { color: #8b949e; font-size: .8rem; margin-left: 8px; }
+  .mockup-body { padding: 20px; display: flex; gap: 20px; min-height: 160px; }
+  .mockup-sidebar {
+    width: 80px; flex-shrink: 0; display: flex; flex-direction: column; gap: 8px;
+  }
+  .mockup-sidebar div {
+    height: 24px; background: #21262d; border-radius: 4px;
+  }
+  .mockup-sidebar div:first-child { background: #9147ff; width: 70%; }
+  .mockup-content { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+  .mockup-content .line { height: 12px; background: #21262d; border-radius: 3px; }
+  .mockup-content .line:first-child { width: 40%; }
+  .mockup-content .line:nth-child(2) { width: 100%; height: 60px; }
+  .mockup-content .line:last-child { width: 30%; height: 28px; background: #9147ff; border-radius: 4px; margin-top: 4px; }
+
+  .btn-wrap { text-align: center; margin: 30px 0; }
+  .btn {
+    display: inline-block; padding: 13px 36px; font-size: 1rem; font-weight: 600;
+    background: #9147ff; color: #fff; border-radius: 6px; text-decoration: none; border: none; cursor: pointer;
+  }
+  .btn:hover { background: #772ce8; }
+  .btn .spinner { display: none; }
+  .btn.downloading .spinner { display: inline-block; }
+  .spinner::after {
+    content: ''; display: inline-block; width: 16px; height: 16px;
+    border: 2px solid #fff; border-top-color: transparent; border-radius: 50%;
+    animation: spin .6s linear infinite; vertical-align: middle; margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .cols { display: flex; gap: 24px; margin: 30px 0; }
+  .col { flex: 1; }
+  .col h2 {
+    font-size: .85rem; font-weight: 600; color: #8b949e; text-transform: uppercase;
+    letter-spacing: .5px; margin-bottom: 10px;
+  }
+  .col p { font-size: .92rem; color: #c9d1d9; }
+
+  .setup { margin: 30px 0; }
+  .setup h2 {
+    font-size: .85rem; font-weight: 600; color: #8b949e; text-transform: uppercase;
+    letter-spacing: .5px; margin-bottom: 12px;
+  }
+  .setup ol { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+  .setup ol li {
+    background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 14px;
+    display: grid; grid-template-columns: 26px 1fr; gap: 10px;
+  }
+  .setup ol li .num {
+    width: 26px; height: 26px; border-radius: 50%; background: #9147ff; color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: .8rem; font-weight: 600;
+  }
+  .setup ol li p { font-size: .9rem; color: #c9d1d9; margin: 0; }
+  .setup ol li a { color: #58a6ff; }
+
+  footer { text-align: center; padding: 24px; font-size: .82rem; color: #484f58; border-top: 1px solid #21262d; }
+  footer a { color: #58a6ff; text-decoration: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1><span>AI</span> Twitch Bot</h1>
+  <p>Chatbot for your Twitch stream.</p>
+</header>
+
+<div class="container">
+  <div class="mockup">
+    <div class="mockup-bar">
+      <div class="mockup-dot r"></div>
+      <div class="mockup-dot y"></div>
+      <div class="mockup-dot g"></div>
+      <span class="mockup-title">AI Twitch Bot</span>
+    </div>
+    <div class="mockup-body">
+      <div class="mockup-sidebar">
+        <div></div>
+        <div></div>
+        <div></div>
+      </div>
+      <div class="mockup-content">
+        <div class="line"></div>
+        <div class="line"></div>
+        <div class="line"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="btn-wrap">
+    <button class="btn" id="downloadBtn" onclick="downloadLatest()">Download</button>
+  </div>
+
+  <div class="cols">
+    <div class="col">
+      <h2>AI chat</h2>
+      <p>Uses Groq to reply in your chat. Trigger by command, @mention, or reply. Automatically searches the web when it needs current info.</p>
+    </div>
+    <div class="col">
+      <h2>Web search</h2>
+      <p>When someone asks a question that needs current info, the bot searches DuckDuckGo and includes the results in its reply.</p>
+    </div>
+  </div>
+
+  <div class="setup">
+    <h2>Getting started</h2>
+    <ol>
+      <li><span class="num">1</span><p>Download and run the installer.</p></li>
+      <li><span class="num">2</span><p>Get a free Groq API key at <a href="https://console.groq.com/keys" target="_blank">console.groq.com</a> and paste it into AI Config.</p></li>
+      <li><span class="num">3</span><p>Register an app on <a href="https://dev.twitch.tv/console/apps" target="_blank">dev.twitch.tv</a> and paste the Client ID into Bot Config, then click "Login with Twitch".</p></li>
+      <li><span class="num">4</span><p>Enter your channel name on the Dashboard and click Start Bot.</p></li>
+    </ol>
+  </div>
+</div>
+
+<footer>
+  <a href="https://github.com/hannogeo/ai-twitch-bot" target="_blank">GitHub</a>
+</footer>
+
+<script>
+async function downloadLatest() {
+  const btn = document.getElementById('downloadBtn');
+  btn.classList.add('downloading');
+  btn.innerHTML = '<span class="spinner"></span>Fetching...';
+
+  try {
+    const res = await fetch('https://api.github.com/repos/hannogeo/ai-twitch-bot/releases/latest');
+    if (!res.ok) throw new Error();
+    const data = await res.json();
+    const setup = (data.assets || []).find(a => a.name.endsWith('-Setup.exe'));
+    if (!setup) throw new Error();
+    window.location.href = setup.browser_download_url;
+  } catch (e) {
+    alert('Could not fetch latest release.');
+  }
+
+  btn.classList.remove('downloading');
+  btn.innerHTML = 'Download';
+}
+</script>
+
+</body>
+</html>
