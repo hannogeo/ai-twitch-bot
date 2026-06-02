@@ -1,16 +1,11 @@
 import datetime
 import os
-import platform
 import shutil
-import subprocess
-import sys
 import threading
-import webbrowser
 from pathlib import Path
 
 import flet as ft
 import flet_desktop
-import requests
 
 from ai_module import AIModule
 from bot import IRCBot
@@ -37,6 +32,7 @@ def main(page: ft.Page):
     page.window.height = 640
     page.window.min_width = 600
     page.window.min_height = 450
+    page.window.icon = os.path.join(BASE_DIR, "app_icon.ico")
 
     bot_config = BotConfig()
     ai_config = AIConfig()
@@ -87,124 +83,12 @@ def main(page: ft.Page):
             bot_thread = threading.Thread(target=run_irc, daemon=True)
             bot_thread.start()
 
-    # ── Twitch Login ──────────────────────────────────────────────────────
-
-    def start_twitch_login(e):
-        client_id = e_client_id.value.strip()
-        if not client_id:
-            page.show_dialog(ft.AlertDialog(
-                title=ft.Text("Enter your Twitch App Client ID first."),
-            ))
-            return
-
-        dlg = ft.AlertDialog(
-            modal=True,
-            title=ft.Text("Twitch Login"),
-            content=ft.Column([ft.Text("Starting login...")], width=420, height=250),
-        )
-        page.show_dialog(dlg)
-        page.update()
-
-        def do_login():
-            try:
-                resp = requests.post("https://id.twitch.tv/oauth2/device", data={
-                    "client_id": client_id, "scopes": "chat:read chat:write"
-                })
-                data = resp.json()
-                if resp.status_code != 200:
-                    page.show_dialog(ft.AlertDialog(title=ft.Text(data.get("message", str(data)))))
-                    dlg.open = False
-                    page.update()
-                    return
-
-                device_code = data["device_code"]
-                user_code = data["user_code"]
-                interval = data.get("interval", 5)
-
-                code_text = ft.Text(user_code, size=32, weight=ft.FontWeight.BOLD, color=ft.Colors.PURPLE)
-                status_label = ft.Text("Waiting for authorization...", color=ft.Colors.GREY)
-                btn_open = ft.FilledButton("Open twitch.tv/activate", on_click=lambda e: webbrowser.open("https://www.twitch.tv/activate"))
-
-                dlg.content = ft.Column([
-                    ft.Text("Enter this code on the Twitch activation page:", size=14),
-                    ft.Container(code_text, alignment=ft.alignment.center, margin=20),
-                    btn_open,
-                    status_label,
-                ], width=420, height=250, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
-                page.update()
-
-                def poll():
-                    nonlocal interval
-                    import time as _t
-                    while True:
-                        _t.sleep(interval)
-                        try:
-                            pr = requests.post("https://id.twitch.tv/oauth2/token", data={
-                                "client_id": client_id, "scopes": "chat:read chat:write",
-                                "device_code": device_code,
-                                "grant_type": "urn:ietf:params:oauth:grant-type:device_code"
-                            })
-                            if pr.status_code == 200:
-                                j = pr.json()
-                                tok = j["access_token"]
-                                dlg.open = False
-                                page.update()
-                                on_login_success(tok)
-                                return
-                            err = pr.json().get("error", "")
-                            if err == "authorization_pending":
-                                continue
-                            if err == "slow_down":
-                                interval += 1
-                                continue
-                            if err == "expired_token":
-                                status_label.value = "Code expired. Try again."
-                                status_label.color = ft.Colors.RED
-                                page.update()
-                                return
-                            status_label.value = f"Error: {err}"
-                            status_label.color = ft.Colors.RED
-                            page.update()
-                            return
-                        except Exception as ex:
-                            status_label.value = f"Error: {str(ex)[:30]}"
-                            status_label.color = ft.Colors.RED
-                            page.update()
-                            return
-
-                threading.Thread(target=poll, daemon=True).start()
-
-            except Exception as ex:
-                dlg.open = False
-                page.update()
-                page.show_dialog(ft.AlertDialog(title=ft.Text(f"Login failed: {str(ex)[:60]}")))
-
-        threading.Thread(target=do_login, daemon=True).start()
-
-    def on_login_success(token):
-        bot_config["TOKEN"] = token
-        bot_config.save()
-        log("Twitch token obtained and saved.", ft.Colors.GREEN)
-        try:
-            vr = requests.get("https://id.twitch.tv/oauth2/validate",
-                              headers={"Authorization": f"Bearer {token}"}, timeout=5)
-            if vr.status_code == 200:
-                login_name = vr.json().get("login", "")
-                if login_name:
-                    bot_config["NICK"] = login_name
-                    bot_config.save()
-                    e_nick.value = login_name
-                    page.update()
-                    log(f"Bot username auto-filled: {login_name}", ft.Colors.GREEN)
-        except Exception:
-            pass
-
     # ── Save Handlers ─────────────────────────────────────────────────────
 
     def save_bot_config(e):
+        bot_config["TOKEN"] = e_token.value.strip()
         bot_config["NICK"] = e_nick.value.strip()
         bot_config["CHANNEL"] = e_chan.value.strip().replace("#", "").lower()
-        bot_config["CLIENT_ID"] = e_client_id.value.strip()
         bot_config["CONNECT_MSG_ENABLED"] = sw_conn.value
         bot_config["DISCONNECT_MSG_ENABLED"] = sw_disc.value
         bot_config["TRIGGER_TAG"] = sw_tag.value
@@ -412,12 +296,9 @@ def main(page: ft.Page):
 
     # ── Bot Config Page ───────────────────────────────────────────────────
 
-    e_client_id = ft.TextField(label="Twitch App Client ID", value=bot_config["CLIENT_ID"], expand=True, text_size=14, height=45)
+    e_token = ft.TextField(label="Access Token", value=bot_config["TOKEN"], password=True, can_reveal_password=True, expand=True, text_size=14, height=45)
     e_nick = ft.TextField(label="Bot Username", value=bot_config["NICK"], expand=True, text_size=14, height=45)
     e_chan = ft.TextField(label="Target Channel", value=bot_config["CHANNEL"], expand=True, text_size=14, height=45)
-
-    btn_login = ft.FilledButton("Login with Twitch", on_click=start_twitch_login,
-                                   bgcolor=ft.Colors.PURPLE_600, color=ft.Colors.WHITE)
 
     sw_conn = ft.Switch(label="Send Connect Message", value=bot_config["CONNECT_MSG_ENABLED"])
     sw_disc = ft.Switch(label="Send Disconnect Message", value=bot_config["DISCONNECT_MSG_ENABLED"])
@@ -434,12 +315,12 @@ def main(page: ft.Page):
         ft.Text("BOT CREDENTIALS", size=28, weight=ft.FontWeight.BOLD),
         ft.Text("Connection settings for Twitch IRC.", color=ft.Colors.GREY, size=13),
         ft.Container(height=20),
-        e_client_id,
-        ft.Row([btn_login, ft.Text("Register an app at dev.twitch.tv, then paste your Client ID.",
-                                    color=ft.Colors.GREY, size=12)], vertical_alignment=ft.CrossAxisAlignment.CENTER),
+        e_token,
+        ft.Text("Get an access token at twitchtokengenerator.com (scopes: chat:read, chat:edit).",
+                color=ft.Colors.GREY, size=12),
         ft.Container(height=10),
         e_nick,
-        ft.Text("Auto-filled after Twitch login. Can also be set manually.", color=ft.Colors.GREY, size=12),
+        ft.Text("The name of the bot's Twitch account.", color=ft.Colors.GREY, size=12),
         ft.Container(height=10),
         e_chan,
         ft.Container(height=20),

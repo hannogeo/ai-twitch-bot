@@ -10,7 +10,7 @@ AI_CONFIG_FILE = os.path.join(BASE_DIR, "ai_config.json")
 
 class BotConfig:
     DEFAULTS = {
-        "NICK": "", "TOKEN": "", "CHANNEL": "", "CLIENT_ID": "",
+        "NICK": "", "TOKEN": "", "CHANNEL": "",
         "CONNECT_MSG_ENABLED": True, "CONNECT_MSG": "/me is now connected...",
         "DISCONNECT_MSG_ENABLED": True, "DISCONNECT_MSG": "/me disconnected!",
         "TRIGGER_TAG": True, "TRIGGER_CMD": True, "TRIGGER_REP": True,
