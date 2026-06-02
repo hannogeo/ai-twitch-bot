@@ -160,11 +160,24 @@ def main(page: ft.Page):
 
             def make_remove(u):
                 def fn(e):
-                    ctx = ai_config.get("chatter_context", {})
-                    ctx.pop(u, None)
-                    ai_config["chatter_context"] = ctx
-                    ai_config.save()
-                    refresh_contexts()
+                    def do_delete(e2):
+                        dlg.open = False
+                        page.update()
+                        ctx = ai_config.get("chatter_context", {})
+                        ctx.pop(u, None)
+                        ai_config["chatter_context"] = ctx
+                        ai_config.save()
+                        refresh_contexts()
+                    dlg = ft.AlertDialog(
+                        title=ft.Text("Delete context?"),
+                        content=ft.Text(f"Remove context for @{u}?"),
+                        actions=[
+                            ft.TextButton("Cancel", on_click=lambda e2: setattr(dlg, 'open', False) or page.update()),
+                            ft.TextButton("Delete", on_click=do_delete),
+                        ],
+                    )
+                    page.show_dialog(dlg)
+                    page.update()
                 return fn
 
             card = ft.Container(
