@@ -84,8 +84,9 @@ def main(page: ft.Page):
             if bot_instance:
                 bot_instance.stop_event.set()
             running = False
-            btn_toggle.text = "▶ START BOT"
+            btn_toggle.content = "▶ START BOT"
             btn_toggle.style = btn_toggle_style
+            btn_toggle.update()
             status_dot.bgcolor = ft.Colors.RED_500
             status_label.value = "STOPPED"
             status_label.color = ft.Colors.GREY_400
@@ -96,8 +97,9 @@ def main(page: ft.Page):
                 page.show_dialog(ft.AlertDialog(title=ft.Text("Missing credentials. Set up Bot Config first.")))
                 return
             running = True
-            btn_toggle.text = "■ STOP BOT"
+            btn_toggle.content = "■ STOP BOT"
             btn_toggle.style = btn_toggle_stop_style
+            btn_toggle.update()
             status_dot.bgcolor = ft.Colors.GREEN_500
             status_label.value = "RUNNING"
             status_label.color = ft.Colors.GREEN_400
