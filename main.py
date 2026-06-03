@@ -60,7 +60,7 @@ def main(page: ft.Page):
             border_radius=12,
             padding=16,
             margin=ft.Margin(0, 0, 0, 12),
-            border=ft.border.all(1, ft.Colors.with_opacity(0.06, ft.Colors.WHITE)),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.06, ft.Colors.WHITE)),
         )
 
     def snack(text):
@@ -174,7 +174,7 @@ def main(page: ft.Page):
             bgcolor="#0D0D0F",
             border_radius=10,
             padding=14,
-            border=ft.border.all(1, ft.Colors.with_opacity(0.06, ft.Colors.WHITE)),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.06, ft.Colors.WHITE)),
         )
         ctx_container.controls.append(add_card)
 
@@ -230,7 +230,7 @@ def main(page: ft.Page):
                 border_radius=10,
                 padding=14,
                 margin=ft.Margin(0, 6, 0, 0),
-                border=ft.border.all(1, ft.Colors.with_opacity(0.06, ft.Colors.WHITE)),
+                border=ft.Border.all(1, ft.Colors.with_opacity(0.06, ft.Colors.WHITE)),
             )
             ctx_container.controls.append(card)
 
@@ -267,7 +267,7 @@ def main(page: ft.Page):
             border_radius=10,
             padding=12,
             margin=ft.Margin(0, 0, 0, 10),
-            border=ft.border.all(1, ft.Colors.with_opacity(0.08, ft.Colors.AMBER)),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.08, ft.Colors.AMBER)),
         )
         page.update()
 
@@ -290,7 +290,7 @@ def main(page: ft.Page):
             border_radius=10,
             padding=12,
             margin=ft.Margin(0, 0, 0, 10),
-            border=ft.border.all(1, ft.Colors.with_opacity(0.08, ft.Colors.PURPLE)),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.08, ft.Colors.PURPLE)),
         )
         page.update()
 
