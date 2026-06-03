@@ -30,6 +30,7 @@ def main(page: ft.Page):
     page.title = "AI Twitch Bot"
     page.theme_mode = ft.ThemeMode.DARK
     page.theme = ft.Theme(color_scheme_seed=ft.Colors.PURPLE)
+    page.bgcolor = "#121214"
     page.window.width = 820
     page.window.height = 640
     page.window.min_width = 600
@@ -94,7 +95,11 @@ def main(page: ft.Page):
             page.update()
         else:
             if not bot_config["TOKEN"] or not bot_config["NICK"] or not bot_config["CHANNEL"]:
-                page.show_dialog(ft.AlertDialog(title=ft.Text("Missing credentials. Set up Bot Config first.")))
+                page.show_dialog(ft.AlertDialog(
+                    title=ft.Text("Missing credentials. Set up Bot Config first.", size=14),
+                    title_padding=ft.Padding(20, 16, 20, 6),
+                    content_padding=ft.Padding(0),
+                ))
                 return
             running = True
             btn_toggle.content = "■ STOP BOT"
@@ -205,11 +210,14 @@ def main(page: ft.Page):
                         ai_config.save()
                         refresh_contexts()
                     dlg = ft.AlertDialog(
-                        title=ft.Text("Delete context?"),
-                        content=ft.Text(f"Remove context for @{u}?"),
+                        title=ft.Text("Delete context?", size=15),
+                        title_padding=ft.Padding(20, 14, 20, 4),
+                        content=ft.Text(f"Remove context for @{u}?", size=13),
+                        content_padding=ft.Padding(20, 4, 20, 8),
+                        actions_padding=ft.Padding(12, 4, 12, 10),
                         actions=[
-                            ft.TextButton("Cancel", on_click=lambda e2: setattr(dlg, 'open', False) or page.update()),
-                            ft.TextButton("Delete", on_click=do_delete),
+                            ft.TextButton("Cancel", style=ft.ButtonStyle(padding=ft.Padding(14, 4, 14, 4)), on_click=lambda e2: setattr(dlg, 'open', False) or page.update()),
+                            ft.TextButton("Delete", style=ft.ButtonStyle(padding=ft.Padding(14, 4, 14, 4)), on_click=do_delete),
                         ],
                     )
                     page.show_dialog(dlg)
