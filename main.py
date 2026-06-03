@@ -297,34 +297,43 @@ def main(page: ft.Page):
         page.update()
 
         def on_progress(percent, kbps, remaining):
-            dl_status.value = f"Downloading... {percent*100:.0f}%"
-            if remaining < 60:
-                dl_speed.value = f"{kbps:.0f} KB/s — {remaining:.0f}s left"
-            else:
-                dl_speed.value = f"{kbps:.0f} KB/s — {remaining/60:.1f}min left"
-            progress_bar.value = percent
-            page.update()
+            async def _update():
+                dl_status.value = f"Downloading... {percent*100:.0f}%"
+                if remaining < 60:
+                    dl_speed.value = f"{kbps:.0f} KB/s — {remaining:.0f}s left"
+                else:
+                    dl_speed.value = f"{kbps:.0f} KB/s — {remaining/60:.1f}min left"
+                progress_bar.value = percent
+                page.update()
+            page.run_task(_update)
 
         def on_downloaded(path, error):
-            if error:
-                dl_status.value = f"Download failed: {error}"
-                dl_status.color = ft.Colors.RED
+            async def _update():
+                if error:
+                    dl_status.value = f"Download failed: {error}"
+                    dl_status.color = ft.Colors.RED
+                    page.update()
+                    return
+                if not path:
+                    return
+                dl_status.value = "Installing..."
+                dl_speed.value = ""
+                progress_bar.value = None
                 page.update()
+            page.run_task(_update)
+            if error or not path:
                 return
-            if not path:
-                return
-            dl_status.value = "Installing..."
-            dl_speed.value = ""
-            progress_bar.value = None
-            page.update()
 
             from updater import apply_update
             apply_update(path)
 
             import time
             time.sleep(1)
-            page.window.destroy()
-            page.update()
+
+            async def _destroy():
+                page.window.destroy()
+                page.update()
+            page.run_task(_destroy)
 
         from updater import download_update
         download_update(url, progress_callback=on_progress, done_callback=on_downloaded)
