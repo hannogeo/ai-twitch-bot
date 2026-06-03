@@ -93,28 +93,27 @@ def download_update(url, progress_callback=None, done_callback=None):
 
 
 def apply_update(zip_path):
-    """Extract zip, create restart script, launch it, then exit the app."""
-    def _apply():
-        try:
-            base = get_app_dir()
-            temp_dir = os.path.join(base, "update_temp")
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
-            os.makedirs(temp_dir)
+    """Extract zip, create restart script, and launch it. Returns once the batch script is running."""
+    try:
+        base = get_app_dir()
+        temp_dir = os.path.join(base, "update_temp")
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
+        os.makedirs(temp_dir)
 
-            with zipfile.ZipFile(zip_path, 'r') as zf:
-                zf.extractall(temp_dir)
+        with zipfile.ZipFile(zip_path, 'r') as zf:
+            zf.extractall(temp_dir)
 
-            # The zip contains a folder named AITwitchBot/
-            source = os.path.join(temp_dir, "AITwitchBot")
-            if not os.path.exists(source):
-                # Files might be at root of zip
-                source = temp_dir
+        # The zip contains a folder named AITwitchBot/
+        source = os.path.join(temp_dir, "AITwitchBot")
+        if not os.path.exists(source):
+            # Files might be at root of zip
+            source = temp_dir
 
-            exe_name = os.path.basename(sys.executable) if getattr(sys, 'frozen', False) else "AITwitchBot.exe"
-            bat_path = os.path.join(base, "update.bat")
+        exe_name = os.path.basename(sys.executable) if getattr(sys, 'frozen', False) else "AITwitchBot.exe"
+        bat_path = os.path.join(base, "update.bat")
 
-            bat_content = f"""@echo off
+        bat_content = f"""@echo off
 chcp 65001 >nul
 echo Waiting for app to close...
 :waitloop
@@ -131,13 +130,10 @@ del "{zip_path}" 2>nul
 start "" "{base}\\{exe_name}"
 del "%~f0"
 """
-            with open(bat_path, "w") as f:
-                f.write(bat_content)
+        with open(bat_path, "w") as f:
+            f.write(bat_content)
 
-            subprocess.Popen(bat_path, shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
-        except Exception:
-            import traceback
-            traceback.print_exc()
-        os._exit(0)
-
-    threading.Thread(target=_apply, daemon=True).start()
+        subprocess.Popen(bat_path, shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
+    except Exception:
+        import traceback
+        traceback.print_exc()
