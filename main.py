@@ -339,7 +339,7 @@ def main(page: ft.Page):
             time.sleep(1)
 
             async def _destroy():
-                page.window.destroy()
+                await page.window.destroy()
                 page.update()
             page.run_task(_destroy)
 
