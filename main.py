@@ -65,7 +65,7 @@ def main(page: ft.Page):
         )
 
     def snack(text):
-        page.show_snack_bar(ft.SnackBar(ft.Text(text), duration=2000))
+        page.show_dialog(ft.SnackBar(ft.Text(text), duration=2000))
 
     def log(text, color=ft.Colors.WHITE_70):
         ts = datetime.datetime.now().strftime("%H:%M:%S")

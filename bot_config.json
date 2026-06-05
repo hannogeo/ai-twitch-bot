@@ -2,7 +2,6 @@
     "NICK": "",
     "TOKEN": "",
     "CHANNEL": "",
-    "CLIENT_ID": "",
     "CONNECT_MSG_ENABLED": true,
     "CONNECT_MSG": "/me is now connected...",
     "DISCONNECT_MSG_ENABLED": true,
@@ -11,5 +10,6 @@
     "TRIGGER_CMD": true,
     "TRIGGER_REP": true,
     "TRIGGER_OTHER_REP": true,
-    "COMMANDS": "!ai, !aichat"
+    "COMMANDS": "!ai, !aichat",
+    "CLIENT_ID": ""
 }
