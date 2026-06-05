@@ -504,7 +504,6 @@ def main(page: ft.Page):
         ], expand=True, spacing=0)
     )
 
-    # Auto-start bot after a moment if credentials are configured
     if bot_config["TOKEN"] and bot_config["NICK"] and bot_config["CHANNEL"]:
         async def _auto_start():
             await asyncio.sleep(1)
