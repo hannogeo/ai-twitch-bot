@@ -47,21 +47,22 @@ def main(page: ft.Page):
 
     log_lines = []
 
-    def section_card(title, content, description=None):
+    def section_card(title, content, description=None, expand=False):
         rows = [
             ft.Text(title, size=16, weight=ft.FontWeight.BOLD),
         ]
         if description:
             rows.append(ft.Text(description, size=12, color=ft.Colors.GREY_400))
         rows.append(ft.Divider(height=1, color=ft.Colors.with_opacity(0.08, ft.Colors.WHITE)))
-        rows.append(ft.Container(content, padding=ft.Padding(0, 4, 0, 0)))
+        rows.append(content)
         return ft.Container(
-            content=ft.Column(rows, spacing=8),
+            content=ft.Column(rows, spacing=8, expand=expand, horizontal_alignment=ft.CrossAxisAlignment.STRETCH),
             bgcolor="#1C1C1E",
             border_radius=12,
             padding=16,
             margin=ft.Margin(0, 0, 0, 12),
             border=ft.Border.all(1, ft.Colors.with_opacity(0.06, ft.Colors.WHITE)),
+            expand=expand,
         )
 
     def snack(text):
@@ -69,13 +70,14 @@ def main(page: ft.Page):
 
     def log(text, color=ft.Colors.WHITE_70):
         ts = datetime.datetime.now().strftime("%H:%M:%S")
-        log_lines.append(f"[{ts}] {text}")
+        log_lines.append((f"[{ts}] {text}", color))
         if len(log_lines) > 500:
             log_lines[:] = log_lines[-500:]
-        log_area.value = "\n".join(log_lines)
 
         async def _update():
-            log_area.update()
+            log_column = log_container.content
+            log_column.controls = [ft.Text(t, color=c, size=13) for t, c in log_lines]
+            log_column.update()
 
         page.run_task(_update)
 
@@ -350,12 +352,14 @@ def main(page: ft.Page):
 
     # ── UI Controls ───────────────────────────────────────────────────────
 
-    log_area = ft.TextField(
-        multiline=True, read_only=True,
-        expand=True,
-        text_size=13,
-        bgcolor="#0D0D0F", border_color=ft.Colors.with_opacity(0.15, ft.Colors.WHITE),
+    log_container = ft.Container(
+        content=ft.Column(spacing=2, scroll=ft.ScrollMode.AUTO, expand=True, horizontal_alignment=ft.CrossAxisAlignment.STRETCH),
+        bgcolor="#0D0D0F",
+        border=ft.Border.all(1, ft.Colors.with_opacity(0.15, ft.Colors.WHITE)),
         border_radius=8,
+        expand=True,
+        padding=ft.Padding(12, 12, 12, 10),
+        margin=ft.Margin(0, 4, 0, 0),
     )
 
     status_dot = ft.Container(width=10, height=10, border_radius=5, bgcolor=ft.Colors.RED_500)
@@ -386,9 +390,11 @@ def main(page: ft.Page):
     dashboard = ft.Column([
         ft.Row([status_badge, v_text], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
         update_banner,
-        section_card("Bot Log", log_area, "Live IRC activity and status messages."),
+        section_card("Bot Log", log_container, "Live IRC activity and status messages.", expand=True),
         ft.Row([btn_toggle], alignment=ft.MainAxisAlignment.CENTER),
-    ], expand=True)
+        ft.Row([ft.Text("Made with ♥ by HannoGeo", size=11, color=ft.Colors.GREY_600, italic=True)],
+               alignment=ft.MainAxisAlignment.CENTER),
+    ], expand=True, spacing=8)
 
     # ── Bot Config Page ───────────────────────────────────────────────────
 

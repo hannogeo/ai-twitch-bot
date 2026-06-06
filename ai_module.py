@@ -3,7 +3,7 @@ import threading
 from groq import Groq
 
 try:
-    from duckduckgo_search import DDGS
+    from ddgs import DDGS
 except ImportError:
     DDGS = None
 
@@ -26,18 +26,29 @@ class AIModule:
         else:
             self.groq_client = None
 
-    def perform_search(self, query: str, max_results: int = 4) -> str:
+    def perform_search(self, query: str, max_results: int = 5) -> str:
         if DDGS is None:
-            return "Web search not available (duckduckgo-search not installed)."
+            return "Web search not available (ddgs not installed)."
         try:
             with DDGS() as ddgs:
                 results = list(ddgs.text(query, max_results=max_results))
                 if not results:
                     return "No search results found."
-                return "\n\n".join(
-                    f"Result: {r.get('title', 'N/A')}\nContent: {r.get('body', 'N/A')}"
-                    for r in results
-                )
+                filtered = []
+                for r in results:
+                    title = r.get('title', '')
+                    body = r.get('body', '')
+                    text = (title + " " + body).lower()
+                    skip_words = [
+                        ' play ', 'play ', ' free ', 'alternative ', 'crazygames',
+                        '-play', 'free to play'
+                    ]
+                    if any(w in text for w in skip_words):
+                        continue
+                    filtered.append(f"Result: {title}\nContent: {body}")
+                if not filtered:
+                    return "No search results found."
+                return "\n\n".join(filtered)
         except Exception as e:
             return f"Search Error: {e}"
 
@@ -52,7 +63,7 @@ class AIModule:
                 model="llama-3.1-8b-instant",
                 messages=[
                     {"role": "system",
-                     "content": "Does the user's message require research or real-time info? Reply ONLY 'YES' or 'NO'."},
+                     "content": "Your training data ends in early 2024. If the user asks about news, events, facts, or anything time-sensitive from 2024 or later, reply YES. When in doubt, reply YES. Reply ONLY 'YES' or 'NO'."},
                     {"role": "user", "content": prompt}
                 ],
                 max_tokens=5,
