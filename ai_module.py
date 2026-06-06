@@ -34,16 +34,18 @@ class AIModule:
                 results = list(ddgs.text(query, max_results=max_results))
                 if not results:
                     return "No search results found."
+                seen = set()
                 filtered = []
                 for r in results:
                     title = r.get('title', '')
                     body = r.get('body', '')
+                    url = r.get('href', r.get('url', ''))
+                    key = (title.lower().strip(), body.lower().strip())
+                    if key in seen:
+                        continue
+                    seen.add(key)
                     text = (title + " " + body).lower()
-                    skip_words = [
-                        ' play ', 'play ', ' free ', 'alternative ', 'crazygames',
-                        '-play', 'free to play'
-                    ]
-                    if any(w in text for w in skip_words):
+                    if any(w in url.lower() for w in ['crazygames', 'worldguessr', 'openguessr', 'geoguesser-free']):
                         continue
                     filtered.append(f"Result: {title}\nContent: {body}")
                 if not filtered:
@@ -63,7 +65,7 @@ class AIModule:
                 model="llama-3.1-8b-instant",
                 messages=[
                     {"role": "system",
-                     "content": "Your training data ends in early 2024. If the user asks about news, events, facts, or anything time-sensitive from 2024 or later, reply YES. When in doubt, reply YES. Reply ONLY 'YES' or 'NO'."},
+                     "content": "Is this a casual greeting or small talk (hi, hello, how are you, thanks, bye)? Reply NO. Does the user ask about news, events, facts, or anything time-sensitive that needs current info? Reply YES. If you're unsure, default to NO. Reply ONLY 'YES' or 'NO'."},
                     {"role": "user", "content": prompt}
                 ],
                 max_tokens=5,
@@ -103,8 +105,8 @@ class AIModule:
             if relevant:
                 final_instr += "\n\nCONTEXT:\n" + "\n".join(relevant)
             if search_context:
-                final_instr += f"\n\nSEARCH RESULTS:\n{search_context}"
-            final_instr += "\n\nBe natural and concise. No self-reference to instructions."
+                final_instr += f"\n\nSEARCH RESULTS:\n{search_context}\n\nUse the search results to answer the question if they contain relevant info."
+            final_instr += "\n\nBe natural and concise."
 
             messages = [{"role": "system", "content": final_instr}]
             with self.history_lock:
