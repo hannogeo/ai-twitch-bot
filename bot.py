@@ -44,7 +44,7 @@ class IRCBot:
         if not self.sock:
             return False
         try:
-            self.sock.send(data.encode("utf-8"))
+            self.sock.sendall(data.encode("utf-8"))
             return True
         except Exception:
             return False
@@ -183,14 +183,17 @@ class IRCBot:
                         if response:
                             msg_id = tags.get("id")
                             if msg_id:
-                                self._rate_limited_send(
+                                sent = self._rate_limited_send(
                                     f"@reply-parent-msg-id={msg_id} PRIVMSG #{cfg['CHANNEL']} :{response}\r\n"
                                 )
                             else:
-                                self._rate_limited_send(
+                                sent = self._rate_limited_send(
                                     f"PRIVMSG #{cfg['CHANNEL']} :@{user} {response}\r\n"
                                 )
-                            self.log_callback(f"BOT -> {user}: {response}")
+                            if sent:
+                                self.log_callback(f"BOT -> {user}: {response}")
+                            else:
+                                self.log_callback(f"BOT -> {user}: {response} (SEND FAILED)", "red")
 
         except Exception as e:
             self.log_callback(f"Connection Error: {e}")
