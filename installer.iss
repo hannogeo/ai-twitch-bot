@@ -1,6 +1,6 @@
 ; Inno Setup Script for AI Twitch Bot
 #define MyAppName "AI Twitch Bot"
-#define MyAppVersion "2.1.2"
+#define MyAppVersion "2.1.3"
 #define MyAppPublisher "hannogeo"
 #define MyAppURL "https://github.com/hannogeo/ai-twitch-bot"
 #define MyAppExeName "AITwitchBot.exe"
