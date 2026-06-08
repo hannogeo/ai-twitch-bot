@@ -11,3 +11,4 @@ venv/
 .venv/
 *.log
 update_setup.exe
+data/

@@ -9,6 +9,8 @@ import zipfile
 
 import requests
 
+from config import BASE_DIR
+
 GITHUB_REPO = "hannogeo/ai-twitch-bot"
 
 
@@ -21,17 +23,12 @@ def parse_semver(version: str):
 
 
 def get_local_version() -> str:
-    base = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
-    vpath = os.path.join(base, "version.json")
+    vpath = os.path.join(BASE_DIR, "version.json")
     try:
         with open(vpath, "r") as f:
             return json.load(f).get("version", "0.0.0")
     except Exception:
         return "0.0.0"
-
-
-def get_app_dir() -> str:
-    return os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
 
 
 def check_for_update(callback):
@@ -60,8 +57,7 @@ def download_update(url, progress_callback=None, done_callback=None):
     """Download update zip. progress_callback(percent, speed_kbps, eta_seconds). done_callback(path, error)."""
     def _do():
         try:
-            base = get_app_dir()
-            zip_path = os.path.join(base, "update.zip")
+            zip_path = os.path.join(BASE_DIR, "update.zip")
 
             r = requests.get(url, stream=True, timeout=30)
             total = int(r.headers.get('content-length', 0))
@@ -95,8 +91,7 @@ def download_update(url, progress_callback=None, done_callback=None):
 def apply_update(zip_path):
     """Extract zip, create restart script, and launch it. Returns once the batch script is running."""
     try:
-        base = get_app_dir()
-        temp_dir = os.path.join(base, "update_temp")
+        temp_dir = os.path.join(BASE_DIR, "update_temp")
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir)
         os.makedirs(temp_dir)
@@ -104,14 +99,12 @@ def apply_update(zip_path):
         with zipfile.ZipFile(zip_path, 'r') as zf:
             zf.extractall(temp_dir)
 
-        # The zip contains a folder named AITwitchBot/
         source = os.path.join(temp_dir, "AITwitchBot")
         if not os.path.exists(source):
-            # Files might be at root of zip
             source = temp_dir
 
         exe_name = os.path.basename(sys.executable) if getattr(sys, 'frozen', False) else "AITwitchBot.exe"
-        bat_path = os.path.join(base, "update.bat")
+        bat_path = os.path.join(BASE_DIR, "update.bat")
 
         bat_content = f"""@echo off
 chcp 65001 >nul
@@ -123,11 +116,11 @@ if not errorlevel 1 (
     goto waitloop
 )
 echo Updating files...
-xcopy "{source}\\*" "{base}\\" /E /Y /Q
+xcopy "{source}\\*" "{BASE_DIR}\\" /E /Y /Q
 echo Cleaning up...
 rmdir /S /Q "{temp_dir}" 2>nul
 del "{zip_path}" 2>nul
-start "" "{base}\\{exe_name}"
+start "" "{BASE_DIR}\\{exe_name}"
 del "%~f0"
 """
         with open(bat_path, "w") as f:

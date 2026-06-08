@@ -24,8 +24,8 @@ SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=lowest
 ChangesAssociations=no
-SetupIconFile=app_icon.ico
-UninstallDisplayIcon={app}\app_icon.ico
+SetupIconFile=assets\app_icon.ico
+UninstallDisplayIcon={app}\assets\app_icon.ico
 UninstallDisplayName={#MyAppName}
 
 [Languages]
@@ -38,14 +38,14 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "dist\AITwitchBot\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\AITwitchBot\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "version.json"; DestDir: "{app}"; Flags: ignoreversion
-Source: "app_icon.ico"; DestDir: "{app}"; Flags: ignoreversion
-Source: "bot_config.json"; DestDir: "{app}"; Flags: ignoreversion onlyifdoesntexist
-Source: "ai_config.json"; DestDir: "{app}"; Flags: ignoreversion onlyifdoesntexist
+Source: "assets\app_icon.ico"; DestDir: "{app}\assets"; Flags: ignoreversion
+Source: "data\bot_config.json"; DestDir: "{app}\data"; Flags: ignoreversion onlyifdoesntexist
+Source: "data\ai_config.json"; DestDir: "{app}\data"; Flags: ignoreversion onlyifdoesntexist
 
 [Icons]
-Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\app_icon.ico"; Comment: "{#MyAppName}"
+Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\assets\app_icon.ico"; Comment: "{#MyAppName}"
 Name: "{autoprograms}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; IconFilename: "{app}\app_icon.ico"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; IconFilename: "{app}\assets\app_icon.ico"
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent

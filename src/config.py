@@ -2,10 +2,35 @@ import json
 import os
 import sys
 
-BASE_DIR = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-BOT_CONFIG_FILE = os.path.join(BASE_DIR, "bot_config.json")
-AI_CONFIG_FILE = os.path.join(BASE_DIR, "ai_config.json")
+DATA_DIR = os.path.join(BASE_DIR, "data")
+BOT_CONFIG_FILE = os.path.join(DATA_DIR, "bot_config.json")
+AI_CONFIG_FILE = os.path.join(DATA_DIR, "ai_config.json")
+
+
+def _ensure_data_dir():
+    if not os.path.exists(DATA_DIR):
+        os.makedirs(DATA_DIR, exist_ok=True)
+
+
+def _migrate_old_config():
+    for old_name, new_path in [("bot_config.json", BOT_CONFIG_FILE), ("ai_config.json", AI_CONFIG_FILE)]:
+        old_path = os.path.join(BASE_DIR, old_name)
+        if os.path.exists(old_path) and not os.path.exists(new_path):
+            try:
+                os.rename(old_path, new_path)
+            except Exception:
+                try:
+                    import shutil
+                    shutil.copy2(old_path, new_path)
+                    os.remove(old_path)
+                except Exception:
+                    pass
+
+
+_ensure_data_dir()
+_migrate_old_config()
 
 
 class BotConfig:
@@ -30,6 +55,7 @@ class BotConfig:
                 pass
 
     def save(self):
+        _ensure_data_dir()
         try:
             with open(BOT_CONFIG_FILE, "w") as f:
                 json.dump(self.data, f, indent=4)
@@ -67,6 +93,7 @@ class AIConfig:
                 pass
 
     def save(self):
+        _ensure_data_dir()
         try:
             with open(AI_CONFIG_FILE, "w") as f:
                 json.dump(self.data, f, indent=4)
