@@ -202,12 +202,44 @@ def main(page: ft.Page):
 
     check_for_update(on_update_available)
 
+    # ── Migration banner ────────────────────────────────────────────────
+
+    async def _open_url(e):
+        await ft.UrlLauncher().launch_url("https://ai-twitch-bot.vercel.app")
+
+    migration_banner = ft.Container(
+        content=ft.Row([
+            ft.Icon(ft.Icons.INFO_OUTLINE, size=16, color=ft.Colors.BLUE_300),
+            ft.Column([
+                ft.Text("There is now a better version of the bot", size=12, color=ft.Colors.GREY_300),
+                ft.Row([
+                    ft.Text("Try it at:", size=12, color=ft.Colors.GREY_500),
+                    ft.GestureDetector(
+                        content=ft.Text("https://ai-twitch-bot.vercel.app", size=12, color=ft.Colors.BLUE_300, italic=True,
+                                        style=ft.TextStyle(decoration=ft.TextDecoration.UNDERLINE, decoration_color=ft.Colors.BLUE_300)),
+                        mouse_cursor=ft.MouseCursor.CLICK,
+                        on_tap=lambda e: page.run_task(_open_url, e),
+                    ),
+                ], spacing=4, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                ft.Text("But feel free to keep using this one if you'd like.", size=12, color=ft.Colors.GREY_500),
+            ], spacing=1, expand=True, horizontal_alignment=ft.CrossAxisAlignment.STRETCH),
+            ft.IconButton(ft.Icons.CLOSE, icon_size=14,
+                          on_click=lambda e: setattr(migration_banner, 'visible', False) or page.update()),
+        ], vertical_alignment=ft.CrossAxisAlignment.START),
+        bgcolor="#1A1A2E",
+        border_radius=8,
+        padding=ft.Padding(10, 8, 4, 8),
+        margin=ft.Margin(0, 0, 0, 6),
+        border=ft.Border.all(1, ft.Colors.with_opacity(0.08, ft.Colors.BLUE)),
+    )
+
     # ── Pages ────────────────────────────────────────────────────────────
 
     dashboard = ft.Column([
         ft.Row([status_badge, ft.Text(f"v{VERSION}", color=ft.Colors.BLUE_300, size=12)],
                alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
         update_banner,
+        migration_banner,
         section_card("Bot Log", log_mgr.container, "Live IRC activity and status messages.", expand=True),
         ft.Row([btn_toggle], alignment=ft.MainAxisAlignment.CENTER),
         ft.Row([ft.Text("Made with ♥ by HannoGeo", size=11, color=ft.Colors.GREY_600, italic=True)],
