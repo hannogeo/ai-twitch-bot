@@ -9,13 +9,6 @@ from ui import section_card, snack
 
 
 def build_bot_config_page(page, bot_config):
-    e_token = ft.TextField(label="Access Token", value=bot_config["TOKEN"], password=True, can_reveal_password=True, expand=True, text_size=14, height=44,
-                           border_radius=8, bgcolor="#0D0D0F")
-    e_nick = ft.TextField(label="Bot Username", value=bot_config["NICK"], expand=True, text_size=14, height=44,
-                          border_radius=8, bgcolor="#0D0D0F")
-    e_chan = ft.TextField(label="Target Channel", value=bot_config["CHANNEL"], expand=True, text_size=14, height=44,
-                          border_radius=8, bgcolor="#0D0D0F")
-
     sw_conn = ft.Switch(label="Send Connect Message", value=bot_config["CONNECT_MSG_ENABLED"])
     sw_disc = ft.Switch(label="Send Disconnect Message", value=bot_config["DISCONNECT_MSG_ENABLED"])
     sw_tag = ft.Switch(label=f"Activate on @{bot_config['NICK'] or 'Bot'} Tag", value=bot_config["TRIGGER_TAG"])
@@ -44,20 +37,15 @@ def build_bot_config_page(page, bot_config):
                 status.color = ft.Colors.GREY_500
                 btn.visible = True
                 out.visible = False
+        nick = get_effective_settings(bot_config, refresh=False)["NICK"]
+        sw_tag.label = f"Activate on @{nick or 'Bot'} Tag"
         page.update()
-
-    def sync_fields_from_auth():
-        eff = get_effective_settings(bot_config, refresh=False)
-        e_chan.value = eff["CHANNEL"]
-        e_nick.value = eff["NICK"]
-        e_token.value = eff["TOKEN"]
 
     def sign_out(account_key):
         auth = dict(bot_config.get("TWITCH_AUTH") or {})
         auth.pop(account_key, None)
         bot_config["TWITCH_AUTH"] = auth
         bot_config.save()
-        sync_fields_from_auth()
         refresh_account_ui()
         snack(page, "Signed out")
 
@@ -122,7 +110,6 @@ def build_bot_config_page(page, bot_config):
             }
             bot_config["TWITCH_AUTH"] = auth
             bot_config.save()
-            sync_fields_from_auth()
             refresh_account_ui()
             dlg.open = False
             page.update()
@@ -183,9 +170,6 @@ def build_bot_config_page(page, bot_config):
     refresh_account_ui()
 
     def save(e):
-        bot_config["TOKEN"] = e_token.value.strip()
-        bot_config["NICK"] = e_nick.value.strip()
-        bot_config["CHANNEL"] = e_chan.value.strip().replace("#", "").lower()
         bot_config["CONNECT_MSG_ENABLED"] = sw_conn.value
         bot_config["DISCONNECT_MSG_ENABLED"] = sw_disc.value
         bot_config["TRIGGER_TAG"] = sw_tag.value
@@ -194,7 +178,7 @@ def build_bot_config_page(page, bot_config):
         bot_config["TRIGGER_OTHER_REP"] = sw_other_rep.value
         bot_config["COMMANDS"] = e_cmds.value.strip()
         bot_config.save()
-        sw_tag.label = f"Activate on @{e_nick.value.strip() or 'Bot'} Tag"
+        sw_tag.label = f"Activate on @{get_effective_settings(bot_config, refresh=False)['NICK'] or 'Bot'} Tag"
         page.update()
         snack(page, "Bot settings saved")
 
@@ -214,19 +198,6 @@ def build_bot_config_page(page, bot_config):
             ft.Text("Saves automatically when you sign in.",
                     color=ft.Colors.GREY_500, size=12),
         ], spacing=6)),
-        section_card("Manual Setup (advanced)", ft.Column([
-            e_token,
-            ft.Text("Only needed if you're not using sign-in above. Get a token at twitchtokengenerator.com (scopes: chat:read, chat:edit).",
-                    color=ft.Colors.GREY_500, size=12),
-            ft.Container(height=4),
-            e_nick,
-            ft.Text("The name of the account sending messages. Auto-filled when you sign in.",
-                    color=ft.Colors.GREY_500, size=12),
-            ft.Container(height=4),
-            e_chan,
-            ft.Text("The channel to join. Auto-filled when you sign in as the streamer.",
-                    color=ft.Colors.GREY_500, size=12),
-        ], spacing=4)),
         section_card("Messages", ft.Column([sw_conn, sw_disc], spacing=4),
                      "Auto-send messages when the bot connects or disconnects."),
         section_card("AI Activation", ft.Column([sw_tag, sw_cmd, sw_rep, sw_other_rep, ft.Container(height=4), e_cmds], spacing=4),

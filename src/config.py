@@ -35,7 +35,6 @@ _migrate_old_config()
 
 class BotConfig:
     DEFAULTS = {
-        "NICK": "", "TOKEN": "", "CHANNEL": "",
         "CONNECT_MSG_ENABLED": True, "CONNECT_MSG": "/me is now connected...",
         "DISCONNECT_MSG_ENABLED": True, "DISCONNECT_MSG": "/me disconnected!",
         "TRIGGER_TAG": True, "TRIGGER_CMD": True, "TRIGGER_REP": True,

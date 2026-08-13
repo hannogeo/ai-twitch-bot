@@ -141,11 +141,10 @@ def get_effective_settings(bot_config, refresh=True):
         nick = streamer["login"]
         token = _account_token(streamer)
     else:
-        nick = bot_config["NICK"]
-        token = bot_config["TOKEN"]
+        nick = ""
+        token = ""
 
-    manual_chan = bot_config["CHANNEL"].strip().replace("#", "").lower()
-    channel = manual_chan or streamer.get("login", "").lower()
+    channel = streamer.get("login", "").lower()
 
     return {"CHANNEL": channel,
             "NICK": nick.strip().lower(),
