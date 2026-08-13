@@ -8,6 +8,10 @@ except ImportError:
     DDGS = None
 
 
+DECISION_MODEL = "openai/gpt-oss-20b"
+MAIN_MODEL = "openai/gpt-oss-120b"
+
+
 class AIModule:
     def __init__(self, config):
         self.config = config
@@ -60,27 +64,29 @@ class AIModule:
 
         try:
             decision = self.groq_client.chat.completions.create(
-                model="llama-3.1-8b-instant",
+                model=DECISION_MODEL,
                 messages=[
                     {"role": "system",
                      "content": "Is this a casual greeting or small talk (hi, hello, how are you, thanks, bye)? Reply NO. Does the user ask about news, events, facts, or anything time-sensitive that needs current info? Reply YES. If you're unsure, default to NO. Reply ONLY 'YES' or 'NO'."},
                     {"role": "user", "content": prompt}
                 ],
-                max_tokens=5,
-                temperature=0.0
+                max_completion_tokens=32,
+                temperature=0.0,
+                reasoning_effort="low"
             )
             needs_search = "YES" in decision.choices[0].message.content.upper()
 
             search_context = ""
             if needs_search:
                 refiner = self.groq_client.chat.completions.create(
-                    model="llama-3.1-8b-instant",
+                    model=DECISION_MODEL,
                     messages=[
                         {"role": "system", "content": "Create a 3-6 word search query. Only output the query."},
                         {"role": "user", "content": prompt}
                     ],
-                    max_tokens=64,
-                    temperature=0.0
+                    max_completion_tokens=128,
+                    temperature=0.0,
+                    reasoning_effort="low"
                 )
                 query = refiner.choices[0].message.content.strip().replace('"', '')
                 search_context = self.perform_search(query)
@@ -112,10 +118,11 @@ class AIModule:
             messages.append({"role": "user", "content": prompt})
 
             completion = self.groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model=MAIN_MODEL,
                 messages=messages,
-                max_tokens=300,
-                temperature=0.6
+                max_completion_tokens=600,
+                temperature=0.6,
+                reasoning_effort="low"
             )
             resp = completion.choices[0].message.content.strip()
 
