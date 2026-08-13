@@ -39,7 +39,8 @@ class BotConfig:
         "CONNECT_MSG_ENABLED": True, "CONNECT_MSG": "/me is now connected...",
         "DISCONNECT_MSG_ENABLED": True, "DISCONNECT_MSG": "/me disconnected!",
         "TRIGGER_TAG": True, "TRIGGER_CMD": True, "TRIGGER_REP": True,
-        "TRIGGER_OTHER_REP": True, "COMMANDS": "!ai, !aichat"
+        "TRIGGER_OTHER_REP": True, "COMMANDS": "!ai, !aichat",
+        "TWITCH_AUTH": {"streamer": {}, "bot": {}}
     }
 
     def __init__(self):
@@ -75,7 +76,6 @@ class BotConfig:
 class AIConfig:
     DEFAULTS = {
         "api_key": "",
-        "enabled": True,
         "system_instruction": "You are a helpful AI Twitch bot.",
         "chatter_context": {}
     }

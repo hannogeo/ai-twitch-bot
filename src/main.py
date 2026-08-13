@@ -11,6 +11,7 @@ from ai_module import AIModule
 from bot import IRCBot
 from config import BASE_DIR, AIConfig, BotConfig
 from pages import build_ai_config_page, build_bot_config_page
+from twitch_auth import get_effective_settings
 from ui import LogManager, section_card, snack
 from updater import (check_for_update, download_update, get_local_version)
 
@@ -81,7 +82,8 @@ def main(page: ft.Page):
             status_label.color = ft.Colors.GREY_400
             status_badge.bgcolor = ft.Colors.with_opacity(0.08, ft.Colors.RED)
         else:
-            if not bot_config["TOKEN"] or not bot_config["NICK"] or not bot_config["CHANNEL"]:
+            eff = get_effective_settings(bot_config, refresh=False)
+            if not eff["TOKEN"] or not eff["NICK"] or not eff["CHANNEL"]:
                 page.show_dialog(ft.AlertDialog(
                     title=ft.Text("Missing credentials. Set up Bot Config first.", size=14),
                     title_padding=ft.Padding(20, 16, 20, 6),
@@ -98,7 +100,9 @@ def main(page: ft.Page):
 
             def run_irc():
                 nonlocal bot_instance
-                irc = IRCBot(bot_config, ai_module, log_mgr.write)
+                merged = dict(bot_config.data)
+                merged.update(get_effective_settings(bot_config, refresh=True))
+                irc = IRCBot(merged, ai_module, log_mgr.write)
                 bot_instance = irc
                 irc.run()
 
@@ -252,12 +256,11 @@ def main(page: ft.Page):
         ], expand=True, spacing=0)
     )
 
-    if bot_config["TOKEN"] and bot_config["NICK"] and bot_config["CHANNEL"]:
+    if get_effective_settings(bot_config, refresh=False)["TOKEN"]:
         async def _auto_start():
             await asyncio.sleep(1)
             toggle_bot(None)
         page.run_task(_auto_start)
-
 
 if __name__ == "__main__":
     ft.run(main)

@@ -1,5 +1,10 @@
+import threading
+import webbrowser
+
 import flet as ft
 
+from twitch_auth import (get_effective_settings, get_user_info,
+                         poll_for_token, start_device_flow)
 from ui import section_card, snack
 
 
@@ -20,6 +25,163 @@ def build_bot_config_page(page, bot_config):
     e_cmds = ft.TextField(label="Custom Commands", value=bot_config["COMMANDS"], expand=True, text_size=14,
                           hint_text="!ai, !aichat", border_radius=8, bgcolor="#0D0D0F")
 
+    # ── Twitch sign-in ─────────────────────────────────────────────────────
+
+    def refresh_account_ui():
+        auth = bot_config.get("TWITCH_AUTH") or {}
+        for entry, status, btn, out in (
+            (auth.get("streamer") or {}, st_status, st_btn, st_out),
+            (auth.get("bot") or {}, bot_status, bot_btn, bot_out),
+        ):
+            name = entry.get("display_name") or entry.get("login") or ""
+            if name:
+                status.value = f"Signed in as @{name}"
+                status.color = ft.Colors.GREEN_400
+                btn.visible = False
+                out.visible = True
+            else:
+                status.value = "Not signed in"
+                status.color = ft.Colors.GREY_500
+                btn.visible = True
+                out.visible = False
+        page.update()
+
+    def sync_fields_from_auth():
+        eff = get_effective_settings(bot_config, refresh=False)
+        e_chan.value = eff["CHANNEL"]
+        e_nick.value = eff["NICK"]
+        e_token.value = eff["TOKEN"]
+
+    def sign_out(account_key):
+        auth = dict(bot_config.get("TWITCH_AUTH") or {})
+        auth.pop(account_key, None)
+        bot_config["TWITCH_AUTH"] = auth
+        bot_config.save()
+        sync_fields_from_auth()
+        refresh_account_ui()
+        snack(page, "Signed out")
+
+    def sign_in(account_key):
+        cancel_event = threading.Event()
+
+        async def close_dlg():
+            dlg.open = False
+            page.update()
+
+        def cancel(e):
+            cancel_event.set()
+            page.run_task(close_dlg)
+
+        dlg = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Sign in with Twitch", size=16),
+            title_padding=ft.Padding(20, 16, 20, 6),
+            content=ft.Column([
+                ft.ProgressRing(width=28, height=28),
+                ft.Text("Starting sign-in...", size=13),
+            ], width=360, spacing=10, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+            content_padding=ft.Padding(20, 8, 20, 12),
+            actions=[ft.TextButton("Cancel", on_click=cancel)],
+            actions_padding=ft.Padding(12, 4, 12, 10),
+        )
+        page.show_dialog(dlg)
+        page.update()
+
+        async def show_code(flow):
+            code = flow["user_code"]
+            uri = flow.get("verification_uri") or "https://www.twitch.tv/activate"
+            dlg.content = ft.Column([
+                ft.Text("1. Open the Twitch page:", size=13),
+                ft.FilledButton("Open twitch.tv/activate", icon=ft.Icons.OPEN_IN_NEW,
+                                on_click=lambda e: webbrowser.open(uri)),
+                ft.Container(height=6),
+                ft.Text("2. Enter this code:", size=13),
+                ft.Text(code, size=30, weight=ft.FontWeight.BOLD, font_family="Consolas",
+                        color=ft.Colors.PURPLE_300, text_align=ft.TextAlign.CENTER),
+                ft.Container(height=6),
+                ft.Text("Waiting for you to authorize...", size=12,
+                        color=ft.Colors.GREY_400, text_align=ft.TextAlign.CENTER),
+            ], width=360, spacing=6, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+            page.update()
+
+        async def fail(err):
+            dlg.content = ft.Column([
+                ft.Icon(ft.Icons.ERROR_OUTLINE, color=ft.Colors.RED_400, size=28),
+                ft.Text(err or "Sign-in failed.", size=13, text_align=ft.TextAlign.CENTER),
+            ], width=360, spacing=10, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+            dlg.actions = [ft.TextButton("Close", on_click=lambda e: page.run_task(close_dlg))]
+            page.update()
+
+        async def done(tokens, info):
+            auth = dict(bot_config.get("TWITCH_AUTH") or {})
+            auth[account_key] = {
+                "login": info["login"],
+                "display_name": info["display_name"],
+                "access_token": tokens["access_token"],
+                "refresh_token": tokens["refresh_token"],
+            }
+            bot_config["TWITCH_AUTH"] = auth
+            bot_config.save()
+            sync_fields_from_auth()
+            refresh_account_ui()
+            dlg.open = False
+            page.update()
+            snack(page, f"Signed in as @{info['login']}")
+
+        def worker():
+            try:
+                flow = start_device_flow()
+            except Exception as e:
+                page.run_task(fail, str(e))
+                return
+            page.run_task(show_code, flow)
+            try:
+                tokens = poll_for_token(flow["device_code"], flow.get("interval", 5), cancel_event)
+            except Exception as e:
+                if not cancel_event.is_set():
+                    page.run_task(fail, str(e))
+                return
+            try:
+                info = get_user_info(tokens["access_token"])
+            except Exception:
+                info = None
+            if not info:
+                page.run_task(fail, "Could not fetch account info.")
+                return
+            page.run_task(done, tokens, info)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    btn_style = ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=10), padding=ft.Padding(20, 10, 20, 10))
+    st_btn = ft.FilledButton("Sign in with Twitch", icon=ft.Icons.LOGIN, style=btn_style,
+                             on_click=lambda e: sign_in("streamer"))
+    st_out = ft.OutlinedButton("Sign out", icon=ft.Icons.LOGOUT, style=btn_style,
+                               on_click=lambda e: sign_out("streamer"))
+    bot_btn = ft.FilledButton("Sign in with Twitch", icon=ft.Icons.LOGIN, style=btn_style,
+                              on_click=lambda e: sign_in("bot"))
+    bot_out = ft.OutlinedButton("Sign out", icon=ft.Icons.LOGOUT, style=btn_style,
+                                on_click=lambda e: sign_out("bot"))
+
+    st_status = ft.Text("Not signed in", size=13, color=ft.Colors.GREY_500)
+    bot_status = ft.Text("Not signed in", size=13, color=ft.Colors.GREY_500)
+
+    def account_card(title, subtitle, status, btn, out):
+        return ft.Container(
+            content=ft.Column([
+                ft.Row([ft.Text(title, weight=ft.FontWeight.BOLD, size=14, expand=True), status],
+                       vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                ft.Text(subtitle, size=12, color=ft.Colors.GREY_500),
+                ft.Container(height=2),
+                ft.Row([btn, out], spacing=8),
+            ], spacing=6),
+            bgcolor="#0D0D0F",
+            border_radius=10,
+            padding=14,
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.06, ft.Colors.WHITE)),
+        )
+
+    refresh_account_ui()
+
     def save(e):
         bot_config["TOKEN"] = e_token.value.strip()
         bot_config["NICK"] = e_nick.value.strip()
@@ -36,22 +198,34 @@ def build_bot_config_page(page, bot_config):
         page.update()
         snack(page, "Bot settings saved")
 
-    btn_style = ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=10), padding=ft.Padding(20, 10, 20, 10))
     btn_save = ft.FilledButton("Save Bot Settings", on_click=save, style=btn_style)
 
     return ft.Column([
         ft.Text("Bot Config", size=28, weight=ft.FontWeight.BOLD),
         ft.Text("Connection settings for Twitch IRC.", color=ft.Colors.GREY_400, size=13),
         ft.Container(height=8),
-        section_card("Credentials", ft.Column([
+        section_card("Sign in with Twitch", ft.Column([
+            account_card("Streamer Account",
+                         "The account whose channel the bot chats in. If no bot account is set, the bot also sends messages as this account.",
+                         st_status, st_btn, st_out),
+            account_card("Bot Account (optional)",
+                         "By default the bot sends messages as you. Sign in a different account here to send messages as it instead.",
+                         bot_status, bot_btn, bot_out),
+            ft.Text("Saves automatically when you sign in.",
+                    color=ft.Colors.GREY_500, size=12),
+        ], spacing=6)),
+        section_card("Manual Setup (advanced)", ft.Column([
             e_token,
-            ft.Text("Get an access token at twitchtokengenerator.com (scopes: chat:read, chat:edit).",
+            ft.Text("Only needed if you're not using sign-in above. Get a token at twitchtokengenerator.com (scopes: chat:read, chat:edit).",
                     color=ft.Colors.GREY_500, size=12),
             ft.Container(height=4),
             e_nick,
-            ft.Text("The name of the bot's Twitch account.", color=ft.Colors.GREY_500, size=12),
+            ft.Text("The name of the account sending messages. Auto-filled when you sign in.",
+                    color=ft.Colors.GREY_500, size=12),
             ft.Container(height=4),
             e_chan,
+            ft.Text("The channel to join. Auto-filled when you sign in as the streamer.",
+                    color=ft.Colors.GREY_500, size=12),
         ], spacing=4)),
         section_card("Messages", ft.Column([sw_conn, sw_disc], spacing=4),
                      "Auto-send messages when the bot connects or disconnects."),
@@ -63,7 +237,6 @@ def build_bot_config_page(page, bot_config):
 
 
 def build_ai_config_page(page, ai_config, ai_module):
-    sw_enabled = ft.Switch(label="AI Brain Enabled (Global)", value=ai_config["enabled"])
     e_key = ft.TextField(label="Groq API Key", value=ai_config["api_key"], password=True, expand=True,
                          text_size=14, hint_text="gsk_...", border_radius=8, bgcolor="#0D0D0F")
     t_instr = ft.TextField(label="System Instruction", value=ai_config["system_instruction"],
@@ -169,7 +342,6 @@ def build_ai_config_page(page, ai_config, ai_module):
 
     def save(e):
         ai_config["api_key"] = e_key.value.strip()
-        ai_config["enabled"] = sw_enabled.value
         ai_config["system_instruction"] = t_instr.value.strip()
         ai_config.save()
         ai_module._init_client()
@@ -184,7 +356,6 @@ def build_ai_config_page(page, ai_config, ai_module):
         ft.Text("Configure Groq interaction and personality.", color=ft.Colors.GREY_400, size=13),
         ft.Container(height=8),
         section_card("AI Brain", ft.Column([
-            sw_enabled,
             e_key,
             ft.Text("Get your free key at console.groq.com/keys", color=ft.Colors.GREY_500, size=12),
             ft.Container(height=4),

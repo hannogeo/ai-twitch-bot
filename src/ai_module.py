@@ -55,8 +55,6 @@ class AIModule:
             return f"Search Error: {e}"
 
     def get_ai_response(self, prompt: str, speaker_name: str = None) -> str | None:
-        if not self.config["enabled"]:
-            return None
         if self.groq_client is None:
             return "Groq API key not set."
 
