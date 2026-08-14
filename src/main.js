@@ -46,7 +46,7 @@ function sendConfig() {
 
 async function toggleBot() {
   if (botState.running) {
-    if (botState.irc) botState.irc.stop();
+    if (botState.irc) await botState.irc.stop();
     botState.running = false;
     botState.irc = null;
     send('bot:status', { running: false });
@@ -267,7 +267,7 @@ app.whenReady().then(() => {
   }
 });
 
-app.on('window-all-closed', () => {
-  if (botState.irc) botState.irc.stop();
+app.on('window-all-closed', async () => {
+  if (botState.irc) await botState.irc.stop();
   app.quit();
 });

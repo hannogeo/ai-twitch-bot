@@ -473,6 +473,54 @@ textarea:focus-visible {
   margin-bottom: 6px;
 }
 
+.field-wrap {
+  position: relative;
+}
+
+.field-wrap input {
+  min-width: 0;
+  padding-right: 40px;
+}
+
+.toggle-eye {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 6px;
+  border-radius: 6px;
+  line-height: 0;
+  cursor: pointer;
+  color: var(--muted);
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.toggle-eye:hover {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.toggle-eye .eye-open {
+  display: none;
+}
+
+.toggle-eye .eye-off {
+  display: block;
+}
+
+.toggle-eye.visible .eye-open {
+  display: block;
+}
+
+.toggle-eye.visible .eye-off {
+  display: none;
+}
+
 input[type="text"],
 input[type="password"],
 textarea {
@@ -726,15 +774,15 @@ textarea {
 }
 
 .modal-body .code {
-  font-size: 30px;
-  font-weight: 700;
+  font-size: 16px;
+  font-weight: 600;
   font-family: "Schibsted Grotesk", sans-serif;
-  letter-spacing: 3px;
-  color: var(--accent-ink);
-  background: rgba(145, 71, 255, 0.12);
-  border: 1px solid rgba(145, 71, 255, 0.25);
-  padding: 8px 18px;
-  border-radius: 12px;
+  letter-spacing: 2px;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 4px 12px;
+  border-radius: 8px;
   margin-top: 2px;
 }
 

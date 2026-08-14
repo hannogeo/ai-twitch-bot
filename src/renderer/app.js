@@ -197,12 +197,12 @@ function showAuthCode(evt) {
   const uri = evt.verification_uri || 'https://www.twitch.tv/activate';
   body.innerHTML = `
     <div class="steps">
-      <div>1. Open the Twitch page:</div>
+      <div>1. Open the Twitch page (code already entered):</div>
       <button class="btn btn-accent" id="auth-open">Open twitch.tv/activate</button>
       <button class="btn btn-ghost btn-small" id="auth-copy-url">Copy link</button>
       <div class="url-text">${escapeHtml(uri)}</div>
       <div style="height:8px"></div>
-      <div>2. Enter this code:</div>
+      <div>2. Confirm this code in the field:</div>
       <div class="code-row">
         <div class="code">${evt.user_code}</div>
         <button class="btn btn-ghost btn-small" id="auth-copy-code">Copy</button>
@@ -428,6 +428,14 @@ function wireEvents() {
   $('#btn-toggle').addEventListener('click', toggleBot);
   $('#save-bot').addEventListener('click', saveBot);
   $('#save-ai').addEventListener('click', saveAi);
+
+  $('#toggle-key').addEventListener('click', () => {
+    const input = $('#in-key');
+    const hidden = input.type === 'password';
+    input.type = hidden ? 'text' : 'password';
+    $('#toggle-key').classList.toggle('visible', hidden);
+    $('#toggle-key').setAttribute('aria-label', hidden ? 'Hide Groq API key' : 'Show Groq API key');
+  });
 
   $('#ctx-add').addEventListener('click', async () => {
     const user = $('#ctx-user').value.trim().toLowerCase();

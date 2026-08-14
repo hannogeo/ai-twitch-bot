@@ -92,13 +92,21 @@ class IRCBot {
     return this._send(msg);
   }
 
-  stop() {
+  async stop() {
     this.stopped = true;
-    if (this.sock) {
+    const cfg = this.config;
+    const sock = this.sock;
+    if (!sock) return;
+    if (cfg.DISCONNECT_MSG_ENABLED && !this._disconnectMsgSent) {
+      this._disconnectMsgSent = true;
       try {
-        this.sock.destroy();
+        const ok = await this._rateLimitedSend(`PRIVMSG #${cfg.CHANNEL} :${cfg.DISCONNECT_MSG}\r\n`);
+        if (ok) this.logCallback(`BOT -> #${cfg.CHANNEL}: ${cfg.DISCONNECT_MSG}`);
       } catch (_e) {}
     }
+    try {
+      sock.end();
+    } catch (_e) {}
   }
 
   async _handleLine(line) {
@@ -210,7 +218,9 @@ class IRCBot {
           this._send(`JOIN #${cfg.CHANNEL}\r\n`);
           this.logCallback(`Connected to #${cfg.CHANNEL}`);
           if (cfg.CONNECT_MSG_ENABLED) {
-            this._rateLimitedSend(`PRIVMSG #${cfg.CHANNEL} :${cfg.CONNECT_MSG}\r\n`);
+            this._rateLimitedSend(`PRIVMSG #${cfg.CHANNEL} :${cfg.CONNECT_MSG}\r\n`).then((ok) => {
+              if (ok) this.logCallback(`BOT -> #${cfg.CHANNEL}: ${cfg.CONNECT_MSG}`);
+            }).catch(() => {});
           }
         }
       );
@@ -230,12 +240,6 @@ class IRCBot {
       });
 
       this.sock.on('close', () => {
-        const wasStopped = this.stopped;
-        if (!wasStopped && cfg.DISCONNECT_MSG_ENABLED && this.sock) {
-          try {
-            this.sock.write(`PRIVMSG #${cfg.CHANNEL} :${cfg.DISCONNECT_MSG}\r\n`);
-          } catch (_e) {}
-        }
         this.sock = null;
         this.logCallback('Disconnected.');
         resolve();
