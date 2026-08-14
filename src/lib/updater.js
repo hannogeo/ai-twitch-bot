@@ -3,7 +3,9 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, execFile } = require('child_process');
+const { promisify } = require('util');
+const execFileAsync = promisify(execFile);
 
 const GITHUB_REPO = 'hannogeo/ai-twitch-bot';
 
@@ -80,11 +82,14 @@ async function downloadUpdate(url, baseDir, onProgress) {
 }
 
 async function applyUpdate(zipPath, baseDir, exeName) {
-  const extractZip = require('extract-zip');
   const tempDir = path.join(baseDir, 'update_temp');
   fs.rmSync(tempDir, { recursive: true, force: true });
   fs.mkdirSync(tempDir, { recursive: true });
-  await extractZip(zipPath, { dir: tempDir });
+  try {
+    await execFileAsync('tar', ['-xf', zipPath, '-C', tempDir], { windowsHide: true });
+  } catch (err) {
+    throw new Error(`Extraction failed: ${err.message}`);
+  }
 
   let source = path.join(tempDir, 'AITwitchBot');
   if (!fs.existsSync(source)) source = tempDir;

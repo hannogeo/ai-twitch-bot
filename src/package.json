@@ -1,7 +1,7 @@
 {
   "name": "ai-twitch-bot",
   "productName": "AI Twitch Bot",
-  "version": "3.0.0",
+  "version": "3.0.2",
   "description": "AI Twitch chat bot",
   "main": "main.js",
   "author": "hannogeo",
@@ -40,7 +40,6 @@
   },
   "dependencies": {
     "duck-duck-scrape": "^2.2.7",
-    "extract-zip": "^2.0.1",
     "groq-sdk": "^1.5.0"
   },
   "devDependencies": {
