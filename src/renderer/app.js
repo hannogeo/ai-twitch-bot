@@ -459,9 +459,15 @@ function wireEvents() {
     renderUpdate();
   });
 
+  $('#about-repo').addEventListener('click', (e) => {
+    e.preventDefault();
+    openExternal('https://github.com/hannogeo/ai-twitch-bot');
+  });
+
   bridge.onConfigChanged((payload) => {
     state.config = payload;
     state.version = payload.version;
+    $('#about-version').textContent = `v${payload.version}`;
     renderBotConfig();
     renderAiConfig();
   });
@@ -499,7 +505,7 @@ async function init() {
   const config = await bridge.getConfig();
   state.config = config;
   state.version = config.version;
-  $('#version-badge').textContent = `v${config.version}`;
+  $('#about-version').textContent = `v${config.version}`;
   renderStatus();
   renderBotConfig();
   renderAiConfig();

@@ -14,12 +14,12 @@
     <div class="brand">
       <img src="../assets/app-icon.png" alt="" class="brand-icon" />
       <span class="brand-name">AI Twitch Bot</span>
-      <span id="version-badge" class="version">v3.0.0</span>
     </div>
     <nav class="tabs">
       <button class="tab active" data-view="dashboard">Dashboard</button>
       <button class="tab" data-view="bot">Bot Config</button>
       <button class="tab" data-view="ai">AI Config</button>
+      <button class="tab" data-view="about">About</button>
     </nav>
   </header>
 
@@ -52,8 +52,6 @@
       <div class="dash-actions">
         <button id="btn-toggle" class="btn btn-start">&#9654; START BOT</button>
       </div>
-
-      <div class="dash-footer">Made with &hearts; by HannoGeo</div>
     </section>
 
     <section id="view-bot" class="view">
@@ -160,6 +158,46 @@
 
       <div class="view-actions">
         <button id="save-ai" class="btn btn-accent">Save AI Settings</button>
+      </div>
+    </section>
+
+    <section id="view-about" class="view">
+      <div class="view-head">
+        <h1>About</h1>
+        <p>AI Twitch Bot - a Twitch chat bot with an AI brain.</p>
+      </div>
+
+      <div class="card">
+        <div class="about-hero">
+          <img src="../assets/app-icon.png" alt="AI Twitch Bot" class="about-icon" />
+          <div class="about-meta">
+            <div class="about-name">AI Twitch Bot</div>
+            <div class="about-version" id="about-version">v0.0.0</div>
+          </div>
+        </div>
+
+        <div class="about-list">
+          <div class="about-row">
+            <span class="about-key">Author</span>
+            <span class="about-val">hannogeo</span>
+          </div>
+          <div class="about-row">
+            <span class="about-key">License</span>
+            <span class="about-val">MIT</span>
+          </div>
+          <div class="about-row">
+            <span class="about-key">Repository</span>
+            <a href="#" class="about-link" id="about-repo">github.com/hannogeo/ai-twitch-bot</a>
+          </div>
+        </div>
+
+        <div class="about-license">
+          <div class="about-license-title">MIT License</div>
+          <p>Copyright &copy; 2026 HannoGeo</p>
+          <p>Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:</p>
+          <p>The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.</p>
+          <p>THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.</p>
+        </div>
       </div>
     </section>
   </main>
