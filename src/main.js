@@ -14,7 +14,7 @@ const {
 } = require('./lib/twitch-auth');
 const { AIModule } = require('./lib/ai');
 const { IRCBot } = require('./lib/irc');
-const { getLocalVersion, checkForUpdate, downloadUpdate, applyUpdate } = require('./lib/updater');
+const { getLocalVersion, checkForUpdate, downloadUpdate, applyUpdate, cleanupUpdateArtifacts } = require('./lib/updater');
 
 const BASE_DIR = app.isPackaged ? path.dirname(process.execPath) : path.join(__dirname, '.');
 const VERSION = getLocalVersion(BASE_DIR);
@@ -140,6 +140,7 @@ function signOut(accountKey) {
 // ── Update ───────────────────────────────────────────────────────────────
 
 async function checkUpdate() {
+  cleanupUpdateArtifacts(BASE_DIR);
   const update = await checkForUpdate(BASE_DIR);
   send('update:event', update ? { type: 'available', version: update.version, url: update.url } : { type: 'none' });
 }

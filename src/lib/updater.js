@@ -81,6 +81,79 @@ async function downloadUpdate(url, baseDir, onProgress) {
   return zipPath;
 }
 
+const UPDATE_TASK_NAME = 'AITwitchBotUpdate';
+
+function futureTaskTime(minutesAhead) {
+  const d = new Date(Date.now() + minutesAhead * 60000);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function writeUpdateBat(batPath, baseDir, exeName, source, tempDir, zipPath) {
+  const waitFile = path.join(baseDir, 'update_wait.txt');
+  const vbsPath = path.join(baseDir, 'run-update.vbs');
+  const exePath = path.join(baseDir, exeName);
+  const lines = [
+    '@echo off',
+    'chcp 65001 >nul',
+    'set /a tries=0',
+    ':waitloop',
+    'set /a tries+=1',
+    `tasklist /FI "IMAGENAME eq ${exeName}" /FO CSV 2>nul > "${waitFile}"`,
+    `find /I "${exeName}" "${waitFile}" >nul`,
+    'if not errorlevel 1 (',
+    '    if %tries% GEQ 120 goto proceed',
+    '    ping -n 2 127.0.0.1 >nul',
+    '    goto waitloop',
+    ')',
+    ':proceed',
+    `xcopy "${source}\\*" "${baseDir}\\" /E /Y /Q`,
+    'echo Updating files...',
+    `rmdir /S /Q "${tempDir}" 2>nul`,
+    `del "${zipPath}" 2>nul`,
+    `del "${waitFile}" 2>nul`,
+    `schtasks /Delete /F /TN "${UPDATE_TASK_NAME}"`,
+    `start "" "${exePath}"`,
+    `del "${vbsPath}" 2>nul`,
+    'del "%~f0"',
+  ].join('\r\n');
+  fs.writeFileSync(batPath, lines);
+}
+
+function writeUpdateVbs(vbsPath, batPath) {
+  const vbs = [
+    'Set ws = CreateObject("WScript.Shell")',
+    `ws.Run "cmd.exe /c ""${batPath}""", 0, True`,
+  ].join('\r\n');
+  fs.writeFileSync(vbsPath, vbs);
+}
+
+async function scheduleUpdateTask(vbsPath) {
+  const wscript = path.join(process.env.WINDIR || 'C:\\Windows', 'System32', 'wscript.exe');
+
+  const registerViaPowerShell = async () => {
+    const ps = `Register-ScheduledTask -Force -TaskName ${UPDATE_TASK_NAME} -Action (New-ScheduledTaskAction -Execute '${wscript}' -Argument '"${vbsPath}"') -Trigger (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1)) -Description 'AI Twitch Bot updater' | Out-Null`;
+    await execFileAsync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ps], { windowsHide: true });
+    await execFileAsync('powershell', ['-NoProfile', '-Command', `Start-ScheduledTask -TaskName ${UPDATE_TASK_NAME}`], { windowsHide: true });
+  };
+
+  const registerViaSchtasks = async () => {
+    const tr = `"${wscript}" "${vbsPath}"`;
+    const st = futureTaskTime(2);
+    await execFileAsync('schtasks', ['/Create', '/F', '/TN', UPDATE_TASK_NAME, '/TR', tr, '/SC', 'ONCE', '/ST', st], { windowsHide: true });
+    await execFileAsync('schtasks', ['/Run', '/TN', UPDATE_TASK_NAME], { windowsHide: true });
+  };
+
+  try {
+    await registerViaPowerShell();
+  } catch (err) {
+    try {
+      await registerViaSchtasks();
+    } catch (err2) {
+      throw new Error(`Could not schedule updater (${err.message}; ${err2.message})`);
+    }
+  }
+}
+
 async function applyUpdate(zipPath, baseDir, exeName) {
   const tempDir = path.join(baseDir, 'update_temp');
   fs.rmSync(tempDir, { recursive: true, force: true });
@@ -95,32 +168,37 @@ async function applyUpdate(zipPath, baseDir, exeName) {
   if (!fs.existsSync(source)) source = tempDir;
 
   const batPath = path.join(baseDir, 'update.bat');
-  const batContent = [
-    '@echo off',
-    'chcp 65001 >nul',
-    'echo Waiting for app to close...',
-    ':waitloop',
-    `tasklist /FI "IMAGENAME eq ${exeName}" 2>nul | find /I "${exeName}" >nul`,
-    'if not errorlevel 1 (',
-    '    timeout /t 1 /nobreak >nul',
-    '    goto waitloop',
-    ')',
-    'echo Updating files...',
-    `xcopy "${source}\\*" "${baseDir}\\" /E /Y /Q`,
-    'echo Cleaning up...',
-    `rmdir /S /Q "${tempDir}" 2>nul`,
-    `del "${zipPath}" 2>nul`,
-    `start "" "${path.join(baseDir, exeName)}"`,
-    'del "%~f0"',
-  ].join('\r\n');
-  fs.writeFileSync(batPath, batContent);
+  const vbsPath = path.join(baseDir, 'run-update.vbs');
+  writeUpdateBat(batPath, baseDir, exeName, source, tempDir, zipPath);
+  writeUpdateVbs(vbsPath, batPath);
 
-  spawn(batPath, [], {
-    shell: true,
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: true,
-  }).unref();
+  try {
+    await scheduleUpdateTask(vbsPath);
+  } catch (err) {
+    spawn(batPath, [], { shell: true, detached: true, stdio: 'ignore', windowsHide: true }).unref();
+  }
 }
 
-module.exports = { parseSemver, compareSemver, getLocalVersion, checkForUpdate, downloadUpdate, applyUpdate };
+async function cleanupUpdateArtifacts(baseDir) {
+  for (const name of ['update_temp', 'update.zip', 'update.bat', 'update_wait.txt', 'run-update.vbs']) {
+    try {
+      fs.rmSync(path.join(baseDir, name), { recursive: true, force: true });
+    } catch (_e) {}
+  }
+  try {
+    await execFileAsync('schtasks', ['/Delete', '/F', '/TN', UPDATE_TASK_NAME], { windowsHide: true });
+  } catch (_e) {}
+}
+
+module.exports = {
+  parseSemver,
+  compareSemver,
+  getLocalVersion,
+  checkForUpdate,
+  downloadUpdate,
+  applyUpdate,
+  cleanupUpdateArtifacts,
+  writeUpdateBat,
+  writeUpdateVbs,
+  scheduleUpdateTask,
+};
