@@ -1,0 +1,50 @@
+{
+  "name": "ai-twitch-bot",
+  "productName": "AI Twitch Bot",
+  "version": "3.0.0",
+  "description": "AI Twitch chat bot",
+  "main": "main.js",
+  "author": "hannogeo",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win dir",
+    "check": "node --check main.js && node --check preload.js && node --check renderer/app.js"
+  },
+  "build": {
+    "appId": "com.hannogeo.aitwitchbot",
+    "productName": "AI Twitch Bot",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "lib/**/*",
+      "renderer/**/*",
+      "version.json",
+      "assets/**/*"
+    ],
+    "win": {
+      "target": "dir",
+      "executableName": "AITwitchBot",
+      "icon": "assets/app-icon.ico"
+    },
+    "electronLanguages": ["en-US"],
+    "extraFiles": [
+      { "from": "version.json", "to": "version.json" },
+      { "from": "assets/app-icon.ico", "to": "assets/app-icon.ico" },
+      { "from": "assets/app-icon.png", "to": "assets/app-icon.png" }
+    ],
+    "asar": true
+  },
+  "dependencies": {
+    "duck-duck-scrape": "^2.2.7",
+    "extract-zip": "^2.0.1",
+    "groq-sdk": "^1.5.0"
+  },
+  "devDependencies": {
+    "electron": "^43.4.0",
+    "electron-builder": "^26.15.3"
+  }
+}

@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Twitch Bot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@500;600;700&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="../assets/app-icon.png" alt="" class="brand-icon" />
+      <span class="brand-name">AI Twitch Bot</span>
+      <span id="version-badge" class="version">v3.0.0</span>
+    </div>
+    <nav class="tabs">
+      <button class="tab active" data-view="dashboard">Dashboard</button>
+      <button class="tab" data-view="bot">Bot Config</button>
+      <button class="tab" data-view="ai">AI Config</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="view-dashboard" class="view active">
+      <div class="dash-top">
+        <div id="status-badge" class="badge stopped">
+          <span class="dot"></span>
+          <span class="label">STOPPED</span>
+        </div>
+      </div>
+
+      <div id="update-banner" class="update-banner" hidden>
+        <div class="update-row">
+          <div class="update-title">Update available</div>
+          <button id="update-close" class="icon-btn" title="Dismiss">&times;</button>
+        </div>
+        <div class="update-detail" id="update-detail">A new version is available.</div>
+        <div class="update-actions" id="update-actions"></div>
+      </div>
+
+      <div class="card log-card">
+        <div class="card-header">
+          <span class="card-title">Live activity</span>
+          <button id="log-clear" class="btn btn-ghost btn-small">Clear</button>
+        </div>
+        <div id="log" class="log"></div>
+      </div>
+
+      <div class="dash-actions">
+        <button id="btn-toggle" class="btn btn-start">&#9654; START BOT</button>
+      </div>
+
+      <div class="dash-footer">Made with &hearts; by HannoGeo</div>
+    </section>
+
+    <section id="view-bot" class="view">
+      <div class="view-head">
+        <h1>Bot Config</h1>
+        <p>Connection settings for Twitch IRC.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Sign in with Twitch</div>
+        <div id="account-streamer" class="account-card"></div>
+        <div id="account-bot" class="account-card"></div>
+        <div class="note">Saves automatically when you sign in.</div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Messages</div>
+        <div class="row">
+          <label class="switch-row">
+            <input type="checkbox" id="sw-conn" />
+            <span>Send Connect Message</span>
+          </label>
+        </div>
+        <div class="row">
+          <label class="switch-row">
+            <input type="checkbox" id="sw-disc" />
+            <span>Send Disconnect Message</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">AI Activation</div>
+        <div class="row">
+          <label class="switch-row">
+            <input type="checkbox" id="sw-tag" />
+            <span id="sw-tag-label">Activate on @Bot Tag</span>
+          </label>
+        </div>
+        <div class="row">
+          <label class="switch-row">
+            <input type="checkbox" id="sw-cmd" />
+            <span>Activate on Commands</span>
+          </label>
+        </div>
+        <div class="row">
+          <label class="switch-row">
+            <input type="checkbox" id="sw-rep" />
+            <span>Activate on Direct Replies</span>
+          </label>
+        </div>
+        <div class="row">
+          <label class="switch-row">
+            <input type="checkbox" id="sw-other-rep" />
+            <span>Allow Triggers in Other Replies</span>
+          </label>
+        </div>
+        <div class="row">
+          <label class="field-label" for="in-cmds">Custom Commands</label>
+          <input type="text" id="in-cmds" placeholder="!ai, !aichat" />
+        </div>
+      </div>
+
+      <div class="view-actions">
+        <button id="save-bot" class="btn btn-accent">Save Bot Settings</button>
+      </div>
+    </section>
+
+    <section id="view-ai" class="view">
+      <div class="view-head">
+        <h1>AI Config</h1>
+        <p>Configure Groq interaction and personality.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-title">AI Brain</div>
+        <div class="row">
+          <label class="field-label" for="in-key">Groq API Key</label>
+          <input type="password" id="in-key" placeholder="gsk_..." />
+        </div>
+        <div class="note">Get your free key at console.groq.com/keys</div>
+        <div class="row" style="margin-top:12px">
+          <label class="field-label" for="in-instr">System Instruction</label>
+          <textarea id="in-instr" rows="6"></textarea>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Chatter Contexts</div>
+        <p class="note">Add context about specific chatters so the bot can personalise responses.</p>
+        <div class="add-context">
+          <input type="text" id="ctx-user" placeholder="Username" />
+          <input type="text" id="ctx-info" placeholder="Context" />
+          <button id="ctx-add" class="btn btn-accent">Add</button>
+        </div>
+        <div id="ctx-list" class="ctx-list"></div>
+      </div>
+
+      <div class="view-actions">
+        <button id="save-ai" class="btn btn-accent">Save AI Settings</button>
+      </div>
+    </section>
+  </main>
+
+  <div id="auth-modal" class="modal" hidden>
+    <div class="modal-card">
+      <div class="modal-title">Sign in with Twitch</div>
+      <div id="auth-body" class="modal-body"></div>
+      <div class="modal-actions">
+        <button id="auth-cancel" class="btn btn-ghost">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

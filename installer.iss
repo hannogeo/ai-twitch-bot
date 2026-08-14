@@ -1,6 +1,6 @@
 ; Inno Setup Script for AI Twitch Bot
 #define MyAppName "AI Twitch Bot"
-#define MyAppVersion "2.2.1"
+#define MyAppVersion "3.0.0"
 #define MyAppPublisher "hannogeo"
 #define MyAppURL "https://github.com/hannogeo/ai-twitch-bot"
 #define MyAppExeName "AITwitchBot.exe"
@@ -24,8 +24,8 @@ SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=lowest
 ChangesAssociations=no
-SetupIconFile=assets\app_icon.ico
-UninstallDisplayIcon={app}\assets\app_icon.ico
+SetupIconFile=src\assets\app-icon.ico
+UninstallDisplayIcon={app}\assets\app-icon.ico
 UninstallDisplayName={#MyAppName}
 
 [Languages]
@@ -35,15 +35,15 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "dist\AITwitchBot\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "dist\AITwitchBot\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "src\dist\AITwitchBot\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "src\dist\AITwitchBot\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "version.json"; DestDir: "{app}"; Flags: ignoreversion
-Source: "assets\app_icon.ico"; DestDir: "{app}\assets"; Flags: ignoreversion
+Source: "src\assets\app-icon.ico"; DestDir: "{app}\assets"; Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\assets\app_icon.ico"; Comment: "{#MyAppName}"
+Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\assets\app-icon.ico"; Comment: "{#MyAppName}"
 Name: "{autoprograms}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; IconFilename: "{app}\assets\app_icon.ico"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; IconFilename: "{app}\assets\app-icon.ico"
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent

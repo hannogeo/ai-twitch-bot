@@ -15,31 +15,34 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
+    - name: Setup Node
+      uses: actions/setup-node@v5
       with:
-        python-version: '3.14'
+        node-version: '22'
 
     - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install pyinstaller flet flet-desktop groq ddgs requests
+      working-directory: src
+      run: npm ci --no-audit --no-fund
 
-    - name: Build with PyInstaller
+    - name: Build with electron-builder
+      working-directory: src
+      run: npx electron-builder --win dir
+
+    - name: Prepare portable folder
+      working-directory: src
       run: |
-        pyinstaller --noconfirm --onedir --windowed --name "AITwitchBot" --icon "assets/app_icon.ico" --collect-all flet --collect-all flet_desktop --add-data "version.json;." --add-data "assets/app_icon.ico;assets" --paths src src/main.py
+        Move-Item dist\win-unpacked dist\AITwitchBot
         Copy-Item version.json dist\AITwitchBot\ -Force
 
     - name: Zip portable build
-      run: |
-        Compress-Archive -Path dist\AITwitchBot -DestinationPath dist\AITwitchBot.zip
+      working-directory: src
+      run: Compress-Archive -Path dist\AITwitchBot -DestinationPath dist\AITwitchBot.zip -Force
 
     - name: Install Inno Setup
       run: choco install innosetup -y
 
     - name: Build Installer
-      run: |
-        iscc installer.iss
+      run: iscc installer.iss
 
     - name: Create Release
       id: create_release
@@ -47,7 +50,7 @@ jobs:
       with:
         files: |
           dist/AITwitchBot-Setup.exe
-          dist/AITwitchBot.zip
+          src/dist/AITwitchBot.zip
         name: Release ${{ github.ref_name }}
         draft: false
         prerelease: false
