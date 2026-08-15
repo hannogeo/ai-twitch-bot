@@ -1,7 +1,7 @@
 {
   "name": "ai-twitch-bot",
   "productName": "AI Twitch Bot",
-  "version": "3.0.5",
+  "version": "3.0.6",
   "description": "AI Twitch chat bot",
   "main": "main.js",
   "author": "hannogeo",

@@ -57,27 +57,55 @@ async function downloadUpdate(url, baseDir, onProgress) {
   }
   const total = parseInt(resp.headers.get('content-length') || '0', 10);
   const out = fs.createWriteStream(zipPath);
+  let writeError = null;
+  out.on('error', (err) => {
+    writeError = err;
+  });
   const reader = resp.body.getReader();
   let downloaded = 0;
   const start = Date.now();
   let lastUpdate = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    out.write(Buffer.from(value));
-    downloaded += value.length;
-    const now = Date.now();
-    if (onProgress && total && now - lastUpdate > 100) {
-      const elapsed = (now - start) / 1000;
-      const speed = downloaded / elapsed;
-      const remaining = speed > 0 ? (total - downloaded) / speed : 0;
-      onProgress(downloaded / total, speed / 1024, remaining);
-      lastUpdate = now;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!out.write(Buffer.from(value))) {
+        await new Promise((resolve) => out.once('drain', resolve));
+      }
+      downloaded += value.length;
+      const now = Date.now();
+      if (onProgress && total && now - lastUpdate > 100) {
+        const elapsed = (now - start) / 1000;
+        const speed = downloaded / elapsed;
+        const remaining = speed > 0 ? (total - downloaded) / speed : 0;
+        onProgress(downloaded / total, speed / 1024, remaining);
+        lastUpdate = now;
+      }
     }
+  } catch (e) {
+    out.destroy();
+    fs.rmSync(zipPath, { force: true });
+    throw e;
   }
   await new Promise((resolve, reject) => {
-    out.end((err) => (err ? reject(err) : resolve()));
+    out.end((err) => {
+      if (err) reject(err);
+      else if (writeError) reject(writeError);
+      else resolve();
+    });
   });
+  if (writeError) {
+    fs.rmSync(zipPath, { force: true });
+    throw writeError;
+  }
+  let size = 0;
+  try {
+    size = fs.statSync(zipPath).size;
+  } catch (_e) {}
+  if (size <= 0 || (total > 0 && size !== total)) {
+    fs.rmSync(zipPath, { force: true });
+    throw new Error(`Downloaded update is incomplete (${size}/${total} bytes).`);
+  }
   return zipPath;
 }
 
@@ -155,6 +183,13 @@ async function scheduleUpdateTask(vbsPath) {
 }
 
 async function applyUpdate(zipPath, baseDir, exeName) {
+  let zipSize = 0;
+  try {
+    zipSize = fs.statSync(zipPath).size;
+  } catch (_e) {}
+  if (zipSize <= 0) {
+    throw new Error(`Update archive not found or empty: ${zipPath}`);
+  }
   const tempDir = path.join(baseDir, 'update_temp');
   fs.rmSync(tempDir, { recursive: true, force: true });
   fs.mkdirSync(tempDir, { recursive: true });
