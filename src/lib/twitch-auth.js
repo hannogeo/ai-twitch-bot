@@ -1,6 +1,6 @@
 'use strict';
 
-const TWITCH_CLIENT_ID = 'e6nlb7cil9n0e51c0gccu7tvd1fxcy';
+const TWITCH_CLIENT_ID = '8b08hy2m68pr26ax4xzowei5ogwaxn';
 const SCOPES = 'chat:read chat:edit';
 
 const DEVICE_URL = 'https://id.twitch.tv/oauth2/device';
